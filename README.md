@@ -12,7 +12,11 @@ CK SYS V3 is the Supabase-backed replacement for the legacy AR Plastic Google Sh
 - Dedicated, permission-controlled Activity & audit page with actor/action/entity/date filters, full before/after details, printing, and CSV export
 - Email OTP PIN password recovery and verified password changes
 - Raw-material purchasing, bulk-to-chip conversion, piecework, production, and finished stock
+- Reusable product master with categories, customer descriptions, selling prices, and Supabase Storage images
+- Public customer catalogue and order-request portal that never exposes stock or cost data
+- Customer-order workflow with Pending, Confirmed, In Progress, Ready, Completed, and Cancelled states
 - Invoices, partial receipts, customer balances, and server-calculated COGS
+- Product quotations and payroll paysheets with generated PDF output
 - Employees, daily work, monthly payroll, deductions, employer contributions, and settlements
 - Double-entry journals, ledger, financial dashboard, and reports
 - Row locks, idempotency keys, optimistic protection, append-only reversals, and durable audits
@@ -31,42 +35,19 @@ The database API key is not the Postgres password. Apply every checked-in migrat
 Use one of these methods:
 
 ```bash
-# After authenticating and linking the Supabase CLI to the correct project
-npx supabase db push
+# Supabase CLI v3 targets local by default; explicitly target the linked project.
+npx supabase db push --remote --yes
 ```
 
-Or run these files in the Supabase SQL Editor, in this exact order:
+The complete ordered schema history is committed under `supabase/migrations/`.
+If the SQL Editor must be used instead, run **every** file in that directory in
+filename order. Do not copy only the newest migration: later migrations depend
+on the earlier security, accounting, inventory, employee, product, quotation,
+and customer-order schema.
 
-1. `supabase/migrations/001_initial_schema.sql`
-2. `supabase/migrations/20260916061535_complete_backend_and_security.sql`
-3. `supabase/migrations/20260916124032_secure_user_bootstrap.sql`
-4. `supabase/migrations/20260916174437_fix_current_date_expressions.sql`
-5. `supabase/migrations/20260920054049_add_employee_pay_profiles.sql`
-6. `supabase/migrations/20260920054055_add_admin_business_data_purge.sql`
-7. `supabase/migrations/20260920165126_harden_payroll_and_journals.sql`
-8. `supabase/migrations/20260921170045_add_conversion_types_and_rate_links.sql`
-9. `supabase/migrations/20260922130000_add_overtime_workflow.sql`
-10. `supabase/migrations/20260927170717_add_multi_company_accounting.sql`
-11. `supabase/migrations/20260927171851_harden_company_inventory_costing.sql`
-12. `supabase/migrations/20260928024913_fix_profiles_rls_recursion.sql`
-13. `supabase/migrations/20260928025106_include_inventory_transfers_in_purge.sql`
-14. `supabase/migrations/20260928030844_add_company_inventory_read_models.sql`
-15. `supabase/migrations/20260928032107_expose_missing_company_memberships.sql`
-16. `supabase/migrations/20260929110429_allow_all_authenticated_users_login.sql`
-17. `supabase/migrations/20260929111312_activate_existing_auth_users_for_all_companies.sql`
-18. `supabase/migrations/20260929112743_make_all_auth_users_full_admin.sql`
-19. `supabase/migrations/20260929113355_remove_obsolete_access_provisioning.sql`
-20. `supabase/migrations/20260929180741_restore_secure_rbac_and_super_admins.sql`
-21. `supabase/migrations/20260929185454_add_account_lifecycle_and_company_purge.sql`
-22. `supabase/migrations/20260929190634_fix_account_lifecycle_audit_context.sql`
-23. `supabase/migrations/20260929190820_enable_lifecycle_rpc_guard.sql`
-24. `supabase/migrations/20260930024902_fix_company_purge_safeupdate_reconciliation.sql`
-25. `supabase/migrations/20260930043000_add_finished_product_selling_prices.sql`
-26. `supabase/migrations/20261005032012_add_audit_report_and_complete_company_purge.sql`
+Then run every script in `supabase/tests/` in numeric order against a non-production project. The later security migrations reverse the temporary universal-Admin state: ordinary Auth identities remain pending until a super administrator assigns company and capability access.
 
-Then run every script in `supabase/tests/` in numeric order against a non-production project. The final migration intentionally reverses the temporary universal-Admin state: ordinary Auth identities become pending until a super administrator assigns company and capability access.
-
-Before applying the database, disable public signup in hosted Supabase Auth and review existing users. When their Auth identities exist, `hiranthadiass4@gmail.com` and `asela78@gmail.com` become group super administrators with Admin access to both CK and AR. Passwords are never stored or changed by SQL; keep them in Supabase Auth.
+Before applying the database, disable public signup in hosted Supabase Auth and review existing users. When their Auth identities exist, `hiranthadiass4@gmail.com` and `info@ck-plastics.com` become group super administrators with Admin access to both CK and AR. Passwords are never stored or changed by SQL; keep them in Supabase Auth.
 
 The linked project now has public signup disabled, six-digit email OTPs, a ten-character minimum password, and **Secure password change** enabled. True PIN delivery also requires the local `supabase/templates/recovery.html` content in the hosted **Reset password** template. Supabase blocks custom templates on free-tier projects that still use its default mail provider, so configure custom production SMTP (or upgrade the project), then push/copy that template. Until then, the standard recovery-link flow remains available. Local development captures PIN emails in Mailpit; run `npx supabase status` to find its URL.
 
@@ -81,10 +62,10 @@ backend/.venv/Scripts/python -m pip install -r backend/requirements.txt -r backe
 Set these values in `backend/.env`:
 
 ```ini
-SUPABASE_URL=https://wnutabervhntqceselwf.supabase.co
+SUPABASE_URL=https://khtmogtjyjpekftzkfcr.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_replace_me
 SUPABASE_SECRET_KEY=sb_secret_replace_me
-SUPABASE_JWKS_URL=https://wnutabervhntqceselwf.supabase.co/auth/v1/.well-known/jwks.json
+SUPABASE_JWKS_URL=https://khtmogtjyjpekftzkfcr.supabase.co/auth/v1/.well-known/jwks.json
 CORS_ORIGINS=["http://localhost:5173"]
 ```
 
@@ -95,7 +76,7 @@ CORS_ORIGINS=["http://localhost:5173"]
 The local browser configuration is read from `.env.local`:
 
 ```ini
-VITE_SUPABASE_URL=https://wnutabervhntqceselwf.supabase.co
+VITE_SUPABASE_URL=https://khtmogtjyjpekftzkfcr.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_replace_me
 VITE_API_URL=/api/v1
 ```
@@ -135,6 +116,11 @@ Dashboard → **New** → **Blueprint**). Supply these prompted values:
   `sb_publishable_...` key
 - `SUPABASE_SECRET_KEY`: a rotated server-only `sb_secret_...` key from the same project
 
+The Blueprint passes the two `VITE_*` public values into the Docker frontend
+build and provides the server values to FastAPI at runtime. Keep
+`VITE_API_URL=/api/v1`; the container serves React and FastAPI from one origin.
+No Postgres connection string or database password is required by Render.
+
 The Blueprint now declares `SUPABASE_SECRET_KEY`, so Render prompts for it with
 the other environment values. Never put that secret in a `VITE_*` variable. If you attach a custom
 domain, append its hostname (without `https://`) to `TRUSTED_HOSTS`.
@@ -152,6 +138,8 @@ https://YOUR-SERVICE.onrender.com/login
 https://YOUR-SERVICE.onrender.com/ck/login
 https://YOUR-SERVICE.onrender.com/ar/login
 https://YOUR-SERVICE.onrender.com/api/v1/health/live
+https://YOUR-SERVICE.onrender.com/api/v1/health/ready
+https://YOUR-SERVICE.onrender.com/catalog
 ```
 
 In **Supabase Dashboard → Authentication → Sessions**, keep **Single session per
@@ -178,3 +166,5 @@ The application will be served on `http://localhost:8080` by default.
 - [Legacy data cutover](docs/CUTOVER.md)
 
 Do not migrate from the old published CSV: it does not contain the eight ERP tabs. Use a controlled JSON/workbook export and reconcile every stock and ledger balance before switching off legacy writes.
+#   C K - A R - S y s t e m - V 2  
+ 
