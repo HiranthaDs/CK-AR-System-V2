@@ -167,4 +167,5 @@ The application will be served on `http://localhost:8080` by default.
 
 Do not migrate from the old published CSV: it does not contain the eight ERP tabs. Use a controlled JSON/workbook export and reconcile every stock and ledger balance before switching off legacy writes.
 #   C K - A R - S y s t e m - V 2  
+ #   C K - A R - S y s t e m - V 2  
  
