@@ -85,6 +85,7 @@ export interface InventoryPosition extends JsonRecord {
   inventory_value: Numeric
   average_unit_cost: Numeric
   selling_price?: Numeric
+  product_type?: string | null
   last_movement_at?: string | null
   is_active: boolean
 }
@@ -106,11 +107,66 @@ export interface InventoryItem extends JsonRecord {
   available?: Numeric
   average_unit_cost?: Numeric
   selling_price?: Numeric
+  product_type?: string | null
+  image_url?: string | null
+  description?: string | null
   average_cost?: Numeric
   avg_cost?: Numeric
   inventory_value?: Numeric
   asset_value?: Numeric
   value?: Numeric
+}
+
+export interface PublicCatalogItem {
+  id: Id
+  sku: string
+  name: string
+  category: string
+  image_url?: string | null
+  selling_price: Numeric
+  description?: string | null
+}
+
+export interface PublicOrderReceipt {
+  ok: boolean
+  order_no: string
+  tracking_token: Id
+  status: CustomerOrderStatus
+  total_amount: Numeric
+  idempotent: boolean
+}
+
+export type CustomerOrderStatus = 'pending' | 'confirmed' | 'in_progress' | 'ready' | 'completed' | 'cancelled'
+
+export interface CustomerOrderItem extends JsonRecord {
+  id: number
+  order_id: Id
+  item_id: Id
+  product_name: string
+  product_category: string
+  product_image_url?: string | null
+  product_description?: string | null
+  quantity: Numeric
+  unit_price: Numeric
+  line_total: Numeric
+}
+
+export interface CustomerOrder extends JsonRecord {
+  id: Id
+  order_no: string
+  customer_name: string
+  customer_phone: string
+  customer_email?: string | null
+  customer_address?: string | null
+  notes?: string | null
+  status: CustomerOrderStatus
+  subtotal: Numeric
+  total_amount: Numeric
+  source: 'catalogue' | 'staff'
+  created_at: string
+  updated_at: string
+  status_updated_at: string
+  customer_order_items: CustomerOrderItem[]
 }
 
 export interface InventorySummary {
@@ -201,6 +257,7 @@ export interface Employee extends JsonRecord {
   monthly_rate?: Numeric | null
   daily_rate?: Numeric | null
   ot_rate?: Numeric | null
+  monthly_incentive?: Numeric | null
   daily_on_conversion?: boolean
   standard_hours_per_day?: Numeric | null
   standard_days_per_month?: Numeric | null
@@ -334,18 +391,20 @@ export interface DailyPiecework extends JsonRecord {
 
 export interface DailyWork extends JsonRecord {
   id: Id
-  reference_no?: string
+  reference_no: string
   employee_id: Id
+  employee_no?: string | null
+  employee_name?: string | null
   work_date: string
-  manual_work_units?: Numeric
-  automatic_work_units?: Numeric
-  work_units: Numeric
-  daily_rate: Numeric
-  base_amount?: Numeric
-  auto_created?: boolean
+  target_hours: Numeric
+  hourly_target: Numeric
+  daily_target: Numeric
+  target_percent: Numeric
+  target_amount: Numeric
   notes?: string | null
-  status?: string | null
-  daily_work_piecework: DailyPiecework[]
+  status: string
+  claimed_payroll_id?: Id | null
+  claimed_payroll_reference?: string | null
 }
 
 export interface OvertimeRecord extends JsonRecord {
@@ -358,6 +417,9 @@ export interface OvertimeRecord extends JsonRecord {
   hours: Numeric
   rate: Numeric
   amount: Numeric
+  target_rate?: Numeric
+  target_percent?: Numeric
+  target_amount?: Numeric
   notes?: string | null
   revision?: number
   status: string
@@ -401,7 +463,7 @@ export interface ProductionRun extends JsonRecord {
   raw_material_quantity_kg?: Numeric
   unit_cost?: Numeric
   chip_item?: { name: string; sku?: string | null } | null
-  finished_item?: { name: string; sku?: string | null; selling_price?: Numeric } | null
+  finished_item?: { name: string; sku?: string | null; product_type?: string | null; selling_price?: Numeric } | null
   operator?: { name: string; employee_no?: string | null } | null
 }
 
@@ -477,6 +539,48 @@ export interface Sale extends JsonRecord {
   sale_payments: Payment[]
 }
 
+export interface QuotationLine extends JsonRecord {
+  id: Id
+  quotation_id?: Id
+  item_id: Id
+  product_name: string
+  product_type?: string | null
+  quantity: Numeric
+  unit_price: Numeric
+  discount: Numeric
+  line_total: Numeric
+  notes?: string | null
+  item?: {
+    id?: Id
+    name: string
+    sku?: string | null
+    unit?: string | null
+    product_type?: string | null
+    selling_price?: Numeric
+  } | null
+}
+
+export interface Quotation extends JsonRecord {
+  id: Id
+  reference_no: string
+  quotation_no: string
+  quotation_date: string
+  valid_until: string
+  customer_name: string
+  customer_phone?: string | null
+  customer_email?: string | null
+  customer_address?: string | null
+  subtotal: Numeric
+  discount_total: Numeric
+  total_amount: Numeric
+  status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'cancelled'
+  terms?: string | null
+  notes?: string | null
+  quotation_items: QuotationLine[]
+  created_at?: string
+  updated_at?: string
+}
+
 export interface PayrollLine extends JsonRecord {
   id: Id
   payroll_id?: Id
@@ -529,6 +633,7 @@ export interface Payroll extends JsonRecord {
     | 'monthly_rate'
     | 'daily_rate'
     | 'ot_rate'
+    | 'monthly_incentive'
     | 'bank_details'
     | 'status'
   >> & { name: string } | null
@@ -650,6 +755,7 @@ export interface EmployeePayload {
   monthly_rate: number
   daily_rate: number
   ot_rate: number
+  monthly_incentive: number
   daily_on_conversion: boolean
   standard_hours_per_day: number
   standard_days_per_month: number

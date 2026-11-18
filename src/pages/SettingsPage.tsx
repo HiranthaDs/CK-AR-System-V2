@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertOctagon, BookOpen, Database, Pencil, Plus, RefreshCw, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
+import { AlertOctagon, BookOpen, Boxes, Copy, Database, ExternalLink, Pencil, Plus, RefreshCw, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Dialog } from '../components/Dialog'
+import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { ConversionTypeDialog, PieceworkRateDialog } from '../components/ConversionSetupDialogs'
+import { ProductCards, ProductDialog, type ProductValues } from '../components/ProductSetup'
 import { useToast } from '../components/Toast'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, InlineNotice, Input, LoadingState, PageHeader, SectionTitle, TableWrap } from '../components/UI'
 import { api, ApiError } from '../lib/api'
 import { money, shortDate, titleCase } from '../lib/format'
-import type { AdminUserAccess, ConversionType, MutationReceipt, PieceworkRate } from '../types/api'
+import type { AdminUserAccess, ConversionType, InventoryItem, MutationReceipt, PieceworkRate } from '../types/api'
 import { useAppContext } from '../layout/AppShell'
 
 export const PURGE_CONFIRMATION = 'DELETE ALL BUSINESS DATA'
@@ -185,6 +186,9 @@ export function SettingsPage() {
   const [rateDialogOpen, setRateDialogOpen] = useState(false)
   const [editingType, setEditingType] = useState<ConversionType | null>(null)
   const [editingRate, setEditingRate] = useState<PieceworkRate | null>(null)
+  const [productOpen, setProductOpen] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
+  const [reversingProduct, setReversingProduct] = useState<InventoryItem | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
   const [createUserOpen, setCreateUserOpen] = useState(false)
@@ -221,6 +225,10 @@ export function SettingsPage() {
     queryKey: ['piecework-rates', 'settings'],
     queryFn: ({ signal }) => api.list<PieceworkRate>('/piecework-rates', { page: 1, page_size: 100, descending: false }, signal),
   })
+  const productsQuery = useQuery({
+    queryKey: ['products', 'settings'],
+    queryFn: ({ signal }) => api.list<InventoryItem>('/products', { page: 1, page_size: 100, descending: false }, signal),
+  })
   const usersQuery = useQuery({
     queryKey: ['admin-users', me.active_company_id],
     queryFn: ({ signal }) => api.list<AdminUserAccess>('/admin/users', { page: 1, page_size: 100 }, signal),
@@ -241,6 +249,28 @@ export function SettingsPage() {
       setCreateUserSubmissionError(message)
       toast.error('Account was not created', message)
     },
+  })
+
+  const productMutation = useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: ProductValues }) => id
+      ? api.patch<MutationReceipt, ProductValues>(`/products/${id}`, body)
+      : api.post<MutationReceipt, ProductValues>('/products', body),
+    onSuccess: async () => {
+      setProductOpen(false)
+      setEditingProduct(null)
+      await queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Product saved', 'The product is available in production, sales, and the customer order portal.')
+    },
+    onError: (error) => toast.error('Product was not saved', error instanceof Error ? error.message : 'Try again.'),
+  })
+  const reverseProductMutation = useMutation({
+    mutationFn: (product: InventoryItem) => api.delete<MutationReceipt>(`/products/${product.id}`),
+    onSuccess: async () => {
+      setReversingProduct(null)
+      await queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Product reversed', 'It is hidden from the customer catalogue and new transactions.')
+    },
+    onError: (error) => toast.error('Product could not be reversed', error instanceof Error ? error.message : 'Try again.'),
   })
 
   const submitNewUser = () => {
@@ -328,6 +358,15 @@ export function SettingsPage() {
   const typeNames = new Map(conversionTypes.map((item) => [item.id, item.name]))
   const closeTypeDialog = () => { setTypeDialogOpen(false); setEditingType(null) }
   const closeRateDialog = () => { setRateDialogOpen(false); setEditingRate(null) }
+  const catalogueLink = `${window.location.origin}/catalog`
+  const copyCatalogueLink = async () => {
+    try {
+      await navigator.clipboard.writeText(catalogueLink)
+      toast.success('Customer link copied', 'Send this same catalogue link to any customer.')
+    } catch {
+      toast.error('Link was not copied', 'Select the link and copy it manually.')
+    }
+  }
 
   return (
     <div className="page-stack settings-page">
@@ -409,6 +448,20 @@ export function SettingsPage() {
         <Button icon={BookOpen} onClick={() => setGuideOpen(true)}>
           Open user guide / මාර්ගෝපදේශය
         </Button>
+      </Card>
+
+      <Card className="product-settings-card">
+        <SectionTitle
+          title="Products & customer catalogue"
+          description="Manage customer-ready product details here or from Production. Stock quantities and costs are never shown on the public link."
+          actions={<div className="row-actions"><Button variant="secondary" icon={Copy} onClick={() => void copyCatalogueLink()}>Copy customer link</Button><Button icon={Plus} onClick={() => { setEditingProduct(null); setProductOpen(true) }}>Add product</Button></div>}
+        />
+        <div className="catalogue-share-bar">
+          <div><Boxes size={21} /><span><strong>One reusable customer link</strong><small>New products and edits appear automatically.</small></span></div>
+          <a className="button button--secondary" href={catalogueLink} target="_blank" rel="noreferrer"><ExternalLink size={17} /> Open catalogue</a>
+        </div>
+        <Input value={catalogueLink} readOnly aria-label="Customer catalogue link" onFocus={(event) => event.currentTarget.select()} />
+        {productsQuery.isLoading ? <LoadingState label="Loading products…" /> : productsQuery.isError ? <ErrorState error={productsQuery.error} onRetry={() => void productsQuery.refetch()} /> : productsQuery.data?.items.length ? <ProductCards products={productsQuery.data.items} onEdit={(product) => { setEditingProduct(product); setProductOpen(true) }} onReverse={setReversingProduct} /> : <EmptyState message="No products have been added yet." action={<Button icon={Plus} onClick={() => setProductOpen(true)}>Add first product</Button>} />}
       </Card>
 
       <Card className="conversion-settings">
@@ -614,6 +667,8 @@ export function SettingsPage() {
       </Dialog>
       <ConversionTypeDialog open={typeDialogOpen} record={editingType} onClose={closeTypeDialog} />
       <PieceworkRateDialog open={rateDialogOpen} record={editingRate} onClose={closeRateDialog} />
+      <ProductDialog open={productOpen} record={editingProduct} mutation={productMutation} onClose={() => { setProductOpen(false); setEditingProduct(null) }} />
+      <ConfirmDialog open={Boolean(reversingProduct)} title="Reverse this product?" message={`${reversingProduct?.name ?? 'This product'} will be hidden from the customer catalogue and new transactions. Existing history is preserved.`} destructive confirmLabel="Reverse product" busy={reverseProductMutation.isPending} onCancel={() => setReversingProduct(null)} onConfirm={() => { if (reversingProduct) reverseProductMutation.mutate(reversingProduct) }} />
     </div>
   )
 }

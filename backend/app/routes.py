@@ -34,8 +34,10 @@ from .models import (
     ConversionRecord,
     ConversionTypeRecord,
     ConversionTypeUpsert,
-    DailyWorkRecord,
-    DailyWorkUpsert,
+    CustomerOrderRecord,
+    CustomerOrderStatusUpdate,
+    DailyTargetRecord,
+    DailyTargetUpsert,
     DashboardResponse,
     EmployeeRecord,
     EmployeeUpsert,
@@ -63,11 +65,17 @@ from .models import (
     ProductionPost,
     ProductionRecord,
     ProductionSummary,
+    ProductUpsert,
+    PublicCatalogResponse,
+    PublicOrderCreate,
+    PublicOrderReceipt,
     ProfileAccess,
     PurgeBusinessDataRequest,
     RawMaterialPurchasePost,
     RawMaterialPurchaseRecord,
     ReadinessResponse,
+    QuotationRecord,
+    QuotationUpsert,
     ReverseRequest,
     SalePaymentPost,
     SalePost,
@@ -85,16 +93,38 @@ _PAYROLL_SELECT = (
     "*,payroll_details(*),payroll_payments(*),"
     "employee:employees!payrolls_employee_id_fkey("
     "id,employee_no,name,nic,phone,address,epf_no,etf_ref,joined_date,"
-    "job_role,employment_type,shift,pay_model,monthly_rate,daily_rate,ot_rate,"
+    "job_role,employment_type,shift,pay_model,monthly_rate,daily_rate,ot_rate,monthly_incentive,"
     "bank_details,status)"
 )
 
 # Keep line-item labels with every full invoice read so corrections, printing,
 # and customer messages never have to guess a product name from its UUID.
 _SALE_SELECT = (
+    "*,sale_items(*,item:inventory_items!sale_items_item_id_fkey(id,name,sku,unit,product_type)),"
+    "sale_payments(*)"
+)
+_SALE_LEGACY_SELECT = (
     "*,sale_items(*,item:inventory_items!sale_items_item_id_fkey(id,name,sku,unit)),"
     "sale_payments(*)"
 )
+
+_PRODUCTION_SELECT = (
+    "*,chip_item:inventory_items!production_runs_chip_item_id_fkey(name,sku),"
+    "finished_item:inventory_items!production_runs_finished_item_id_fkey(name,sku,selling_price,product_type),"
+    "operator:employees!production_runs_operator_employee_id_fkey(name,employee_no)"
+)
+_PRODUCTION_LEGACY_SELECT = (
+    "*,chip_item:inventory_items!production_runs_chip_item_id_fkey(name,sku),"
+    "finished_item:inventory_items!production_runs_finished_item_id_fkey(name,sku,selling_price),"
+    "operator:employees!production_runs_operator_employee_id_fkey(name,employee_no)"
+)
+
+_QUOTATION_SELECT = (
+    "*,quotation_items(*,item:inventory_items!quotation_items_item_id_fkey("
+    "id,name,sku,unit,product_type,selling_price))"
+)
+
+_CUSTOMER_ORDER_SELECT = "*,customer_order_items(*)"
 
 _PIECEWORK_RATE_SELECT = (
     "*,conversion_type:conversion_types!piecework_rates_conversion_type_id_fkey("
@@ -309,6 +339,34 @@ async def readiness(request: Request, settings: SettingsDep, gateway: Gateway) -
             "supabase_jwks": "ok",
             "supabase_schema": "ok",
         },
+    )
+
+
+@router.get("/public/catalog", response_model=PublicCatalogResponse, tags=["public"])
+async def public_catalog(request: Request, gateway: Gateway) -> PublicCatalogResponse:
+    """Return the shareable product catalogue without stock or costing data."""
+    items = await gateway.public_catalog(request_id=request.state.request_id)
+    return PublicCatalogResponse(items=items)
+
+
+@router.post(
+    "/public/orders",
+    response_model=PublicOrderReceipt,
+    status_code=status.HTTP_201_CREATED,
+    tags=["public"],
+)
+async def submit_public_order(
+    body: PublicOrderCreate,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+) -> PublicOrderReceipt:
+    payload = _payload(body)
+    payload.pop("website", None)
+    return await gateway.submit_public_order(
+        payload=payload,
+        idempotency_key=idempotency_key,
+        request_id=request.state.request_id,
     )
 
 
@@ -670,7 +728,7 @@ async def delete_piecework_rate(
     )
 
 
-@router.get("/daily-work", response_model=PageResponse[DailyWorkRecord], tags=["workforce"])
+@router.get("/daily-work", response_model=PageResponse[DailyTargetRecord], tags=["workforce"])
 async def list_daily_work(
     request: Request,
     gateway: Gateway,
@@ -685,8 +743,7 @@ async def list_daily_work(
         gateway,
         principal,
         pagination,
-        source="daily_work",
-        select="*,daily_work_piecework(*)",
+        source="daily_target_work_view",
         order=_order(filters, allowed={"work_date", "created_at"}, default="work_date"),
         filters=_filters(
             filters,
@@ -704,21 +761,21 @@ async def list_daily_work(
     tags=["workforce"],
 )
 async def create_daily_work(
-    body: DailyWorkUpsert,
+    body: DailyTargetUpsert,
     request: Request,
     gateway: Gateway,
     idempotency_key: IdempotencyKey,
     principal: Annotated[Principal, _principal("employees.write")],
 ) -> MutationResponse:
     return await _execute(
-        request, gateway, principal, idempotency_key, "daily_work.upsert", _payload(body)
+        request, gateway, principal, idempotency_key, "daily_target.upsert", _payload(body)
     )
 
 
 @router.patch("/daily-work/{work_id}", response_model=MutationResponse, tags=["workforce"])
 async def update_daily_work(
     work_id: UUID,
-    body: DailyWorkUpsert,
+    body: DailyTargetUpsert,
     request: Request,
     gateway: Gateway,
     idempotency_key: IdempotencyKey,
@@ -726,7 +783,7 @@ async def update_daily_work(
 ) -> MutationResponse:
     payload = _payload(body)
     payload["id"] = str(work_id)
-    return await _execute(request, gateway, principal, idempotency_key, "daily_work.upsert", payload)
+    return await _execute(request, gateway, principal, idempotency_key, "daily_target.upsert", payload)
 
 
 @router.delete("/daily-work/{work_id}", response_model=MutationResponse, tags=["workforce"])
@@ -743,7 +800,7 @@ async def reverse_daily_work(
         gateway,
         principal,
         idempotency_key,
-        "daily_work.reverse",
+        "daily_target.reverse",
         _reversal(work_id, body),
     )
 
@@ -1051,6 +1108,89 @@ async def inventory_items(
     )
 
 
+# Reusable finished-product catalogue
+
+
+@router.get("/products", response_model=PageResponse[GenericRecord], tags=["production"])
+async def list_products(
+    request: Request,
+    gateway: Gateway,
+    pagination: PageParams,
+    filters: CollectionQuery,
+    principal: Annotated[
+        Principal,
+        _principal_any("production.read", "inventory.read", "sales.read"),
+    ],
+) -> Any:
+    return await _list(
+        request,
+        gateway,
+        principal,
+        pagination,
+        source="inventory_items",
+        order=_order(filters, allowed={"name", "product_type", "selling_price", "created_at"}, default="name"),
+        filters=_filters(
+            filters,
+            date_column=None,
+            search_column="name",
+            include_status=False,
+            extra=[QueryFilter("stage", "eq", InventoryStage.FINISHED.value)],
+        ),
+    )
+
+
+@router.post(
+    "/products",
+    response_model=MutationResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["production"],
+)
+async def create_product(
+    body: ProductUpsert,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+    principal: Annotated[Principal, _principal("production.write")],
+) -> MutationResponse:
+    return await _execute(
+        request, gateway, principal, idempotency_key, "product.upsert", _payload(body)
+    )
+
+
+@router.patch("/products/{product_id}", response_model=MutationResponse, tags=["production"])
+async def update_product(
+    product_id: UUID,
+    body: ProductUpsert,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+    principal: Annotated[Principal, _principal("production.write")],
+) -> MutationResponse:
+    payload = _payload(body)
+    payload["id"] = str(product_id)
+    return await _execute(
+        request, gateway, principal, idempotency_key, "product.upsert", payload
+    )
+
+
+@router.delete("/products/{product_id}", response_model=MutationResponse, tags=["production"])
+async def reverse_product(
+    product_id: UUID,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+    principal: Annotated[Principal, _principal("production.write")],
+) -> MutationResponse:
+    return await _execute(
+        request,
+        gateway,
+        principal,
+        idempotency_key,
+        "product.reverse",
+        {"id": str(product_id)},
+    )
+
+
 # Raw material purchases
 
 
@@ -1302,20 +1442,17 @@ async def list_production(
     filters: CollectionQuery,
     principal: Annotated[Principal, _principal("production.read")],
 ) -> Any:
-    return await _list(
-        request,
-        gateway,
-        principal,
-        pagination,
-        source="production_runs",
-        select=(
-            "*,chip_item:inventory_items!production_runs_chip_item_id_fkey(name,sku),"
-            "finished_item:inventory_items!production_runs_finished_item_id_fkey(name,sku,selling_price),"
-            "operator:employees!production_runs_operator_employee_id_fkey(name,employee_no)"
-        ),
-        order=_order(filters, allowed={"production_date", "reference_no", "created_at"}, default="production_date"),
-        filters=_filters(filters, date_column="production_date", search_column="reference_no"),
-    )
+    kwargs = {
+        "source": "production_runs",
+        "order": _order(filters, allowed={"production_date", "reference_no", "created_at"}, default="production_date"),
+        "filters": _filters(filters, date_column="production_date", search_column="reference_no"),
+    }
+    try:
+        return await _list(request, gateway, principal, pagination, select=_PRODUCTION_SELECT, **kwargs)
+    except ApiError as exc:
+        if exc.code != "supabase_schema_unavailable":
+            raise
+        return await _list(request, gateway, principal, pagination, select=_PRODUCTION_LEGACY_SELECT, **kwargs)
 
 
 @router.get("/production/summary", response_model=ProductionSummary, tags=["production"])
@@ -1392,18 +1529,12 @@ async def get_production(
     gateway: Gateway,
     principal: Annotated[Principal, _principal("production.read")],
 ) -> Any:
-    return await _get(
-        request,
-        gateway,
-        principal,
-        source="production_runs",
-        record_id=production_id,
-        select=(
-            "*,chip_item:inventory_items!production_runs_chip_item_id_fkey(name,sku),"
-            "finished_item:inventory_items!production_runs_finished_item_id_fkey(name,sku,selling_price),"
-            "operator:employees!production_runs_operator_employee_id_fkey(name,employee_no)"
-        ),
-    )
+    try:
+        return await _get(request, gateway, principal, source="production_runs", record_id=production_id, select=_PRODUCTION_SELECT)
+    except ApiError as exc:
+        if exc.code != "supabase_schema_unavailable":
+            raise
+        return await _get(request, gateway, principal, source="production_runs", record_id=production_id, select=_PRODUCTION_LEGACY_SELECT)
 
 
 @router.post(
@@ -1465,6 +1596,151 @@ async def reverse_production(
 # Sales and receipts
 
 
+@router.get("/customer-orders", response_model=PageResponse[CustomerOrderRecord], tags=["sales"])
+async def list_customer_orders(
+    request: Request,
+    gateway: Gateway,
+    pagination: PageParams,
+    filters: CollectionQuery,
+    principal: Annotated[Principal, _principal("sales.read")],
+) -> Any:
+    return await _list(
+        request,
+        gateway,
+        principal,
+        pagination,
+        source="customer_orders",
+        select=_CUSTOMER_ORDER_SELECT,
+        order=_order(
+            filters,
+            allowed={"created_at", "order_no", "customer_name", "total_amount", "status"},
+            default="created_at",
+        ),
+        filters=_filters(
+            filters,
+            date_column="created_at",
+            date_is_timestamp=True,
+            search_column="customer_name",
+        ),
+    )
+
+
+@router.patch(
+    "/customer-orders/{order_id}/status",
+    response_model=MutationResponse,
+    tags=["sales"],
+)
+async def update_customer_order_status(
+    order_id: UUID,
+    body: CustomerOrderStatusUpdate,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+    principal: Annotated[Principal, _principal("sales.write")],
+) -> MutationResponse:
+    return await _execute(
+        request,
+        gateway,
+        principal,
+        idempotency_key,
+        "customer_order.status",
+        {"id": str(order_id), "status": body.status},
+    )
+
+
+@router.get("/quotations", response_model=PageResponse[QuotationRecord], tags=["sales"])
+async def list_quotations(
+    request: Request,
+    gateway: Gateway,
+    pagination: PageParams,
+    filters: CollectionQuery,
+    principal: Annotated[Principal, _principal("sales.read")],
+) -> Any:
+    return await _list(
+        request,
+        gateway,
+        principal,
+        pagination,
+        source="quotations",
+        select=_QUOTATION_SELECT,
+        order=_order(
+            filters,
+            allowed={"quotation_date", "quotation_no", "valid_until", "total_amount", "created_at"},
+            default="quotation_date",
+        ),
+        filters=_filters(filters, date_column="quotation_date", search_column="quotation_no"),
+    )
+
+
+@router.get("/quotations/{quotation_id}", response_model=QuotationRecord, tags=["sales"])
+async def get_quotation(
+    quotation_id: UUID,
+    request: Request,
+    gateway: Gateway,
+    principal: Annotated[Principal, _principal("sales.read")],
+) -> Any:
+    return await _get(
+        request,
+        gateway,
+        principal,
+        source="quotations",
+        record_id=quotation_id,
+        select=_QUOTATION_SELECT,
+    )
+
+
+@router.post(
+    "/quotations",
+    response_model=MutationResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["sales"],
+)
+async def create_quotation(
+    body: QuotationUpsert,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+    principal: Annotated[Principal, _principal("sales.write")],
+) -> MutationResponse:
+    return await _execute(
+        request, gateway, principal, idempotency_key, "quotation.upsert", _payload(body)
+    )
+
+
+@router.patch("/quotations/{quotation_id}", response_model=MutationResponse, tags=["sales"])
+async def update_quotation(
+    quotation_id: UUID,
+    body: QuotationUpsert,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+    principal: Annotated[Principal, _principal("sales.write")],
+) -> MutationResponse:
+    payload = _payload(body)
+    payload["id"] = str(quotation_id)
+    return await _execute(
+        request, gateway, principal, idempotency_key, "quotation.upsert", payload
+    )
+
+
+@router.delete("/quotations/{quotation_id}", response_model=MutationResponse, tags=["sales"])
+async def cancel_quotation(
+    quotation_id: UUID,
+    request: Request,
+    gateway: Gateway,
+    idempotency_key: IdempotencyKey,
+    principal: Annotated[Principal, _principal("sales.write")],
+) -> MutationResponse:
+    return await _execute(
+        request,
+        gateway,
+        principal,
+        idempotency_key,
+        "quotation.cancel",
+        {"id": str(quotation_id)},
+    )
+
+
 @router.get("/sales-outstanding", response_model=PageResponse[GenericRecord], tags=["sales"])
 async def sales_outstanding(
     request: Request,
@@ -1494,16 +1770,17 @@ async def list_sales(
     filters: CollectionQuery,
     principal: Annotated[Principal, _principal("sales.read")],
 ) -> Any:
-    return await _list(
-        request,
-        gateway,
-        principal,
-        pagination,
-        source="sales",
-        select=_SALE_SELECT,
-        order=_order(filters, allowed={"sale_date", "invoice_no", "reference_no", "created_at"}, default="sale_date"),
-        filters=_filters(filters, date_column="sale_date", search_column="invoice_no"),
-    )
+    kwargs = {
+        "source": "sales",
+        "order": _order(filters, allowed={"sale_date", "invoice_no", "reference_no", "created_at"}, default="sale_date"),
+        "filters": _filters(filters, date_column="sale_date", search_column="invoice_no"),
+    }
+    try:
+        return await _list(request, gateway, principal, pagination, select=_SALE_SELECT, **kwargs)
+    except ApiError as exc:
+        if exc.code != "supabase_schema_unavailable":
+            raise
+        return await _list(request, gateway, principal, pagination, select=_SALE_LEGACY_SELECT, **kwargs)
 
 
 @router.get("/sales/{sale_id}", response_model=SaleRecord, tags=["sales"])
@@ -1513,14 +1790,12 @@ async def get_sale(
     gateway: Gateway,
     principal: Annotated[Principal, _principal("sales.read")],
 ) -> Any:
-    return await _get(
-        request,
-        gateway,
-        principal,
-        source="sales",
-        record_id=sale_id,
-        select=_SALE_SELECT,
-    )
+    try:
+        return await _get(request, gateway, principal, source="sales", record_id=sale_id, select=_SALE_SELECT)
+    except ApiError as exc:
+        if exc.code != "supabase_schema_unavailable":
+            raise
+        return await _get(request, gateway, principal, source="sales", record_id=sale_id, select=_SALE_LEGACY_SELECT)
 
 
 @router.post(

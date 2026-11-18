@@ -8,13 +8,13 @@ import { api } from '../lib/api'
 import { localIsoDate, localIsoMonth, money, monthLabel, numberValue, quantity, shortDate, titleCase } from '../lib/format'
 import { downloadPayrollExcel } from '../lib/payrollReportExport'
 import { payrollWhatsAppMessage } from '../lib/payrollMessage'
+import { sharePayrollPaysheetPdf } from '../lib/payrollPaysheetPdf'
 import { normalizeWhatsAppPhone } from '../lib/salesInvoice'
 import type { DailyWork, Employee, MutationReceipt, OpenEarning, OvertimeRecord, Page, Payment, Payroll, PayrollLine } from '../types/api'
 import { useAppContext } from '../layout/AppShell'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { RemoteSelect } from '../components/RemoteSelect'
-import { ManualSelect } from '../components/ManualSelect'
 import { payrollEmployeeDisplay } from './employeesPayroll'
 import {
   Badge,
@@ -74,6 +74,7 @@ const employeeSchema = z.object({
   monthly_rate: z.coerce.number().min(0),
   daily_rate: z.coerce.number().min(0),
   ot_rate: z.coerce.number().min(0),
+  monthly_incentive: z.coerce.number().min(0),
   daily_on_conversion: z.boolean(),
   bank_name: z.string().max(100),
   bank_branch: z.string().max(100),
@@ -86,28 +87,19 @@ const employeeSchema = z.object({
   if ((value.pay_model === 'daily' || value.pay_model === 'hybrid') && value.daily_rate <= 0) context.addIssue({ code: 'custom', path: ['daily_rate'], message: 'A daily rate is required for this pay model.' })
 })
 
-const pieceworkSchema = z.object({
-  task: z.string().min(1, 'Task is required.').max(160),
-  quantity_kg: z.coerce.number().positive('Quantity must be positive.'),
-  rate_per_kg: z.coerce.number().positive('Rate must be positive.'),
-})
-
 const dailyWorkSchema = z.object({
   employee_id: z.string().uuid('Select an employee.'),
   work_date: z.string().min(1, 'Select a work date.'),
-  work_units: z.coerce.number().positive('Work units must be positive.'),
-  daily_rate: z.coerce.number().positive('Daily rate must be positive.'),
+  target_percent: z.coerce.number().min(0, 'Target % cannot be below 0.').max(100, 'Target % cannot exceed 100.'),
   notes: z.string().max(2000),
-  manual_piecework: z.array(pieceworkSchema).max(100),
 })
 
 const overtimeSchema = z.object({
   employee_id: z.string().uuid('Select an employee.'),
   work_date: z.string().min(1, 'Select an OT date.'),
   hours: z.coerce.number().positive('OT hours must be greater than 0.').max(24, 'OT hours cannot exceed 24 for one record.'),
-  rate: z.coerce.number().positive('OT rate must be greater than 0.'),
+  target_percent: z.coerce.number().min(0, 'OT Target % cannot be below 0.').max(100, 'OT Target % cannot exceed 100.'),
   notes: z.string().max(1000),
-  update_employee_rate: z.boolean(),
 })
 
 
@@ -131,8 +123,9 @@ const payrollSchema = z.object({
   employer_contributions: z.array(payrollLineSchema.pick({ type: true, description: true, amount: true, account_code: true })).max(100),
   claim_ids: z.array(z.string()),
   overtime_ids: z.array(z.string()),
+  daily_target_ids: z.array(z.string()),
 }).superRefine((value, context) => {
-  if (!value.earnings.length && !value.claim_ids.length && !value.overtime_ids.length) context.addIssue({ code: 'custom', path: ['earnings'], message: 'Add an earning, select recorded work, or select overtime.' })
+  if (!value.earnings.length && !value.claim_ids.length && !value.overtime_ids.length && !value.daily_target_ids.length) context.addIssue({ code: 'custom', path: ['earnings'], message: 'Add an earning, select a Daily Target, recorded work, or overtime.' })
 })
 
 const paymentSchema = z.object({
@@ -173,6 +166,7 @@ function employeePayload(values: EmployeeValues) {
     monthly_rate: values.monthly_rate || undefined,
     daily_rate: values.daily_rate || undefined,
     ot_rate: values.ot_rate || undefined,
+    monthly_incentive: values.monthly_incentive || 0,
     daily_on_conversion: values.daily_on_conversion,
     bank_details: hasBank ? bankDetails : undefined,
     status: values.status,
@@ -348,29 +342,18 @@ export function EmployeesPage() {
   })
   const workMutation = useMutation({
     mutationFn: ({ id, body }: { id?: string | undefined; body: DailyWorkValues }) => id ? api.patch<MutationReceipt, DailyWorkValues>(`/daily-work/${id}`, body) : api.post<MutationReceipt, DailyWorkValues>('/daily-work', body),
-    onSuccess: async () => { setWorkOpen(false); setEditingWork(null); await invalidate(); toast.success('Daily work saved', 'Open payroll earnings were recalculated.') },
-    onError: (error) => toast.error('Daily work was not saved', error instanceof Error ? error.message : 'Try again.'),
+    onSuccess: async () => { setWorkOpen(false); setEditingWork(null); await invalidate(); toast.success('Daily Target saved', 'The incentive amount is ready for payroll.') },
+    onError: (error) => toast.error('Daily Target was not saved', error instanceof Error ? error.message : 'Try again.'),
   })
   const reverseWorkMutation = useMutation({
     mutationFn: (work: DailyWork) => api.delete<MutationReceipt, { reason: string }>(`/daily-work/${work.id}`, { reason: 'Reversed from staff workspace' }),
-    onSuccess: async () => { setReverseWork(null); await invalidate(); toast.success('Daily work reversed') },
-    onError: (error) => toast.error('Daily work could not be reversed', error instanceof Error ? error.message : 'Try again.'),
+    onSuccess: async () => { setReverseWork(null); await invalidate(); toast.success('Daily Target reversed') },
+    onError: (error) => toast.error('Daily Target could not be reversed', error instanceof Error ? error.message : 'Try again.'),
   })
   const overtimeMutation = useMutation({
-    mutationFn: async ({ id, values, employee }: { id?: string | undefined; values: OvertimeValues; employee: Employee | null }) => {
-      const { update_employee_rate, ...body } = values
-      const saved = id
-        ? await api.patch<MutationReceipt, typeof body>(`/overtime/${id}`, body)
-        : await api.post<MutationReceipt, typeof body>('/overtime', body)
-
-      if (update_employee_rate && employee && numberValue(employee.ot_rate) !== numberValue(values.rate)) {
-        const terms = employeePayTerms(employee)
-        terms.ot_rate = numberValue(values.rate)
-        const employeeBody = employeePayload(employeeValuesWithPayTerms(employee, terms))
-        await api.patch<MutationReceipt, typeof employeeBody>(`/employees/${employee.id}`, employeeBody)
-      }
-      return saved
-    },
+    mutationFn: ({ id, values }: { id?: string | undefined; values: OvertimeValues }) => id
+      ? api.patch<MutationReceipt, OvertimeValues>(`/overtime/${id}`, values)
+      : api.post<MutationReceipt, OvertimeValues>('/overtime', values),
     onSuccess: async () => { setOvertimeOpen(false); setEditingOvertime(null); await invalidate(); toast.success('Overtime saved', 'The OT entry is ready for the employee payroll month.') },
     onError: (error) => toast.error('Overtime was not saved', error instanceof Error ? error.message : 'Try again.'),
   })
@@ -380,7 +363,7 @@ export function EmployeesPage() {
     onError: (error) => toast.error('Overtime could not be reversed', error instanceof Error ? error.message : 'Try again.'),
   })
   const payrollMutation = useMutation({
-    mutationFn: ({ id, body }: { id?: string | undefined; body: Omit<PayrollValues, 'claim_ids' | 'overtime_ids'> & { overtime_ids: string[]; daily_work_ids: string[]; conversion_worker_ids: string[]; manual_piecework_ids: string[] } }) => id ? api.patch<MutationReceipt, typeof body>(`/payroll/${id}`, body) : api.post<MutationReceipt, typeof body>('/payroll', body),
+    mutationFn: ({ id, body }: { id?: string | undefined; body: Omit<PayrollValues, 'claim_ids'> & { daily_work_ids: string[]; conversion_worker_ids: string[]; manual_piecework_ids: string[] } }) => id ? api.patch<MutationReceipt, typeof body>(`/payroll/${id}`, body) : api.post<MutationReceipt, typeof body>('/payroll', body),
     onSuccess: async (receipt) => {
       setPayrollOpen(false)
       setEditingPayroll(null)
@@ -428,7 +411,7 @@ export function EmployeesPage() {
   const changeTab = (value: StaffTab) => { setTab(value); setPage(1); setSearch('') }
   const tabItems = [
     { value: 'employees' as const, label: 'Employees', icon: Users },
-    { value: 'daily-work' as const, label: 'Daily work', icon: CalendarCheck },
+    { value: 'daily-work' as const, label: 'Daily Work', icon: CalendarCheck },
     { value: 'overtime' as const, label: 'OT hours', icon: Clock3 },
     { value: 'earnings' as const, label: 'Open earnings', icon: BriefcaseBusiness },
     { value: 'payroll' as const, label: 'Payroll', icon: ReceiptText },
@@ -473,7 +456,7 @@ export function EmployeesPage() {
       <PayrollPostFollowupDialog payroll={postPayroll} step={postPayrollStep} companyName={me.active_company_name} hidden={Boolean(paymentPayroll)} onPayLater={() => setPostPayrollStep('delivery')} onPayment={() => { if (postPayroll) setPaymentPayroll(postPayroll) }} onPrint={() => { if (postPayroll) setProfilePayroll(postPayroll); setPostPayroll(null) }} onDone={() => setPostPayroll(null)} />
       <EmployeePayrollProfileDialog key={profilePayroll?.id ?? 'no-paysheet'} payroll={profilePayroll} companyName={me.active_company_name} onClose={() => setProfilePayroll(null)} />
       <ConfirmDialog open={Boolean(deleteEmployee)} title="Deactivate this employee?" message={`${deleteEmployee?.name ?? 'This employee'} will no longer appear in active staff selections. Historical records remain intact.`} destructive confirmLabel="Deactivate" busy={employeeDeleteMutation.isPending} onCancel={() => setDeleteEmployee(null)} onConfirm={() => { if (deleteEmployee) employeeDeleteMutation.mutate(deleteEmployee) }} />
-      <ConfirmDialog open={Boolean(reverseWork)} title="Reverse this daily-work record?" message="The record remains in the audit trail and any unclaimed earnings are removed." destructive confirmLabel="Post reversal" busy={reverseWorkMutation.isPending} onCancel={() => setReverseWork(null)} onConfirm={() => { if (reverseWork) reverseWorkMutation.mutate(reverseWork) }} />
+      <ConfirmDialog open={Boolean(reverseWork)} title="Reverse this Daily Target record?" message="The record remains in the audit trail and its unclaimed incentive is removed from payroll selection." destructive confirmLabel="Post reversal" busy={reverseWorkMutation.isPending} onCancel={() => setReverseWork(null)} onConfirm={() => { if (reverseWork) reverseWorkMutation.mutate(reverseWork) }} />
       <ConfirmDialog open={Boolean(reverseOvertime)} title="Reverse this OT record?" message="The OT entry remains in the audit trail and can no longer be claimed by payroll." destructive confirmLabel="Reverse OT" busy={reverseOvertimeMutation.isPending} onCancel={() => setReverseOvertime(null)} onConfirm={() => { if (reverseOvertime) reverseOvertimeMutation.mutate(reverseOvertime) }} />
       <ConfirmDialog open={Boolean(reversePayroll)} title="Reverse this payroll?" message={`${reversePayroll?.reference_no ?? 'This payroll'} and its accounting effects will be offset; claimed work becomes available according to server rules.`} destructive confirmLabel="Post reversal" busy={reversePayrollMutation.isPending} onCancel={() => setReversePayroll(null)} onConfirm={() => { if (reversePayroll) reversePayrollMutation.mutate(reversePayroll) }} />
       <ConfirmDialog open={Boolean(reversePayment)} title="Reverse this payroll payment?" message={`${reversePayment?.payment.reference_no ?? 'This payment'} will remain visible and receive offsetting accounting entries.`} destructive confirmLabel="Reverse payment" busy={reversePaymentMutation.isPending} onCancel={() => setReversePayment(null)} onConfirm={() => { if (reversePayment) reversePaymentMutation.mutate(reversePayment) }} />
@@ -483,7 +466,7 @@ export function EmployeesPage() {
 
 function EmployeeList({ query, page, setPage, search, setSearch, onAdd, onOvertime, onEdit, onDelete }: { query: ReturnType<typeof useQuery<Page<Employee>>>; page: number; setPage: (page: number) => void; search: string; setSearch: (value: string) => void; onAdd: () => void; onOvertime: (employee: Employee) => void; onEdit: (employee: Employee) => void; onDelete: (employee: Employee) => void }) {
   const rows = query.data?.items ?? []
-  return <Card><SectionTitle title="Employee master" description="Pay terms and statutory references are read from Supabase at posting time." actions={<Button icon={Plus} onClick={onAdd}>New employee</Button>} /><div className="toolbar"><SearchBox value={search} onChange={setSearch} placeholder="Search employee name" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Employee</th><th>Role / shift</th><th>Pay model</th><th className="numeric">Monthly</th><th className="numeric">Daily</th><th>Joined</th><th>Status</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong>{row.name}</strong><span className="table-subtext mono">{row.employee_no || 'Not assigned'} · {row.nic || 'No NIC'}</span></td><td>{row.job_role || '—'}<span className="table-subtext">{row.shift || 'No shift'}</span></td><td>{titleCase(row.pay_model)}</td><td className="numeric">{money(row.monthly_rate)}</td><td className="numeric">{money(row.daily_rate)}</td><td>{shortDate(row.joined_date)}</td><td><Badge tone={statusTone(row.status)}>{titleCase(row.status)}</Badge></td><td><div className="row-actions"><Button size="small" variant="ghost" icon={Clock3} onClick={() => onOvertime(row)}>OT details</Button><Button size="small" variant="ghost" icon={Pencil} onClick={() => onEdit(row)}>Edit</Button><Button size="small" variant="ghost" icon={Trash2} disabled={row.status === 'inactive'} onClick={() => onDelete(row)}>Deactivate</Button></div></td></tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No employees match the search." action={<Button icon={Plus} onClick={onAdd}>Add first employee</Button>} />}</Card>
+  return <Card><SectionTitle title="Employee master" description="Pay terms and statutory references are read from Supabase at posting time." actions={<Button icon={Plus} onClick={onAdd}>New employee</Button>} /><div className="toolbar"><SearchBox value={search} onChange={setSearch} placeholder="Search employee name" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Employee</th><th>Role / shift</th><th>Pay model</th><th className="numeric">Monthly</th><th className="numeric">Daily</th><th className="numeric">Monthly Incentive</th><th>Joined</th><th>Status</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong>{row.name}</strong><span className="table-subtext mono">{row.employee_no || 'Not assigned'} · {row.nic || 'No NIC'}</span></td><td>{row.job_role || '—'}<span className="table-subtext">{row.shift || 'No shift'}</span></td><td>{titleCase(row.pay_model)}</td><td className="numeric">{money(row.monthly_rate)}</td><td className="numeric">{money(row.daily_rate)}</td><td className="numeric">{money(row.monthly_incentive)}</td><td>{shortDate(row.joined_date)}</td><td><Badge tone={statusTone(row.status)}>{titleCase(row.status)}</Badge></td><td><div className="row-actions"><Button size="small" variant="ghost" icon={Clock3} onClick={() => onOvertime(row)}>OT details</Button><Button size="small" variant="ghost" icon={Pencil} onClick={() => onEdit(row)}>Edit</Button><Button size="small" variant="ghost" icon={Trash2} disabled={row.status === 'inactive'} onClick={() => onDelete(row)}>Deactivate</Button></div></td></tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No employees match the search." action={<Button icon={Plus} onClick={onAdd}>Add first employee</Button>} />}</Card>
 }
 
 function EmployeeOvertimeDialog({ employee, year, onAdd, onEdit, onReverse, onClose }: {
@@ -528,9 +511,9 @@ function EmployeeOvertimeDialog({ employee, year, onAdd, onEdit, onReverse, onCl
         <Card><span className="table-subtext">Total OT amount</span><strong>{money(totalAmount)}</strong></Card>
       </div>
       {query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? (
-        <TableWrap><table><thead><tr><th>Date / reference</th><th className="numeric">Hours</th><th className="numeric">Rate</th><th className="numeric">Amount</th><th>Notes</th><th>Payroll / status</th><th /></tr></thead><tbody>{rows.map((row) => {
+        <TableWrap><table><thead><tr><th>Date / reference</th><th className="numeric">Hours</th><th className="numeric">OT Rate</th><th className="numeric">OT Pay</th><th className="numeric">Target Rate</th><th className="numeric">Target %</th><th className="numeric">Target amount</th><th>Payroll / status</th><th /></tr></thead><tbody>{rows.map((row) => {
           const claimed = Boolean(row.claimed_payroll_id || row.claimed_payroll_reference || row.status === 'claimed' || row.status === 'paid')
-          return <tr key={row.id}><td><strong className="mono">{row.reference_no}</strong><span className="table-subtext">{shortDate(row.work_date)}</span></td><td className="numeric">{quantity(row.hours, 2)}</td><td className="numeric">{money(row.rate)}</td><td className="numeric"><strong>{money(numberValue(row.amount) || numberValue(row.hours) * numberValue(row.rate))}</strong></td><td>{row.notes || '—'}</td><td>{row.claimed_payroll_reference || (claimed ? 'Claimed' : 'Not claimed')}<span className="table-subtext"><Badge tone={statusTone(claimed ? 'partial' : row.status)}>{titleCase(claimed ? 'claimed' : row.status)}</Badge></span></td><td><div className="row-actions"><Button size="small" variant="ghost" icon={Pencil} disabled={claimed || row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr>
+          return <tr key={row.id}><td><strong className="mono">{row.reference_no}</strong><span className="table-subtext">{shortDate(row.work_date)}</span></td><td className="numeric">{quantity(row.hours, 2)}</td><td className="numeric">{money(row.rate)}</td><td className="numeric"><strong>{money(numberValue(row.amount) || numberValue(row.hours) * numberValue(row.rate))}</strong></td><td className="numeric">{money(row.target_rate)}</td><td className="numeric">{quantity(row.target_percent, 2)}%</td><td className="numeric"><strong>{money(row.target_amount)}</strong></td><td>{row.claimed_payroll_reference || (claimed ? 'Claimed' : 'Not claimed')}<span className="table-subtext"><Badge tone={statusTone(claimed ? 'partial' : row.status)}>{titleCase(claimed ? 'claimed' : row.status)}</Badge></span></td><td><div className="row-actions"><Button size="small" variant="ghost" icon={Pencil} disabled={claimed || row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr>
         })}</tbody></table></TableWrap>
       ) : <EmptyState message={`No OT hours have been recorded for ${employee?.name ?? 'this employee'} in ${year}.`} action={<Button icon={Plus} onClick={onAdd}>Add first OT entry</Button>} />}
     </Dialog>
@@ -539,7 +522,18 @@ function EmployeeOvertimeDialog({ employee, year, onAdd, onEdit, onReverse, onCl
 
 function DailyWorkList({ query, page, setPage, onAdd, onEdit, onReverse }: { query: ReturnType<typeof useQuery<Page<DailyWork>>>; page: number; setPage: (page: number) => void; onAdd: () => void; onEdit: (work: DailyWork) => void; onReverse: (work: DailyWork) => void }) {
   const rows = query.data?.items ?? []
-  return <Card><SectionTitle title="Daily work" description="Daily wage and manual piecework are available to payroll exactly once." actions={<Button icon={Plus} onClick={onAdd}>Record work</Button>} />{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Employee</th><th className="numeric">Units</th><th className="numeric">Daily rate</th><th className="numeric">Base amount</th><th className="numeric">Piecework</th><th>Status</th><th /></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong className="mono">{row.reference_no || row.id.slice(0, 8)}</strong><span className="table-subtext">{shortDate(row.work_date)}</span></td><td className="mono">{row.employee_id.slice(0, 8)}…</td><td className="numeric">{quantity(row.work_units)}</td><td className="numeric">{money(row.daily_rate)}</td><td className="numeric">{money(row.base_amount ?? numberValue(row.work_units) * numberValue(row.daily_rate))}</td><td className="numeric">{money(row.daily_work_piecework.reduce((sum, item) => sum + numberValue(item.amount), 0))}</td><td><Badge tone={statusTone(row.status)}>{titleCase(row.status ?? 'posted')}</Badge></td><td><div className="row-actions"><Button size="small" variant="ghost" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Correct</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No daily-work records exist for this year." />}</Card>
+  return (
+    <Card>
+      <SectionTitle title="Daily Work · 8-hour target" description="Hourly Target is Monthly Incentive ÷ 200. Daily Target is fixed at 8 hours and the achievement percentage is entered manually." actions={<Button icon={Plus} onClick={onAdd}>Record Daily Target</Button>} />
+      {query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <>
+        <TableWrap><table><thead><tr><th>Date / reference</th><th>Employee</th><th className="numeric">Hours</th><th className="numeric">Hourly Target</th><th className="numeric">Daily Target</th><th className="numeric">Target %</th><th className="numeric">Target amount</th><th>Payroll / status</th><th /></tr></thead><tbody>{rows.map((row) => {
+          const claimed = Boolean(row.claimed_payroll_id || row.claimed_payroll_reference)
+          return <tr key={row.id}><td><strong className="mono">{row.reference_no}</strong><span className="table-subtext">{shortDate(row.work_date)}</span></td><td><strong>{row.employee_name || row.employee_id.slice(0, 8)}</strong><span className="table-subtext">{row.employee_no || 'Employee'}</span></td><td className="numeric">{quantity(row.target_hours, 2)}</td><td className="numeric">{money(row.hourly_target)}</td><td className="numeric">{money(row.daily_target)}</td><td className="numeric">{quantity(row.target_percent, 2)}%</td><td className="numeric"><strong>{money(row.target_amount)}</strong></td><td>{row.claimed_payroll_reference || (claimed ? 'Claimed' : 'Not claimed')}<span className="table-subtext"><Badge tone={statusTone(claimed ? 'partial' : row.status)}>{titleCase(claimed ? 'claimed' : row.status)}</Badge></span></td><td><div className="row-actions"><Button size="small" variant="ghost" icon={Pencil} disabled={claimed || row.status === 'reversed'} onClick={() => onEdit(row)}>Correct</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={claimed || row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr>
+        })}</tbody></table></TableWrap>
+        <Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} />
+      </> : <EmptyState message="No Daily Target records exist for this year." action={<Button icon={Plus} onClick={onAdd}>Record first Daily Target</Button>} />}
+    </Card>
+  )
 }
 
 
@@ -565,7 +559,7 @@ function OvertimeList({ query, page, setPage, onAdd, onEdit, onReverse }: {
         <>
           <TableWrap>
             <table>
-              <thead><tr><th>Date / reference</th><th>Employee</th><th className="numeric">Hours</th><th className="numeric">OT rate</th><th className="numeric">Amount</th><th>Payroll</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th>Date / reference</th><th>Employee</th><th className="numeric">Hours</th><th className="numeric">OT Rate</th><th className="numeric">OT Pay</th><th className="numeric">Target Rate</th><th className="numeric">Target %</th><th className="numeric">Target amount</th><th>Payroll</th><th>Status</th><th /></tr></thead>
               <tbody>
                 {rows.map((row) => {
                   const amount = numberValue(row.amount) || numberValue(row.hours) * numberValue(row.rate)
@@ -577,6 +571,9 @@ function OvertimeList({ query, page, setPage, onAdd, onEdit, onReverse }: {
                       <td className="numeric">{quantity(row.hours, 2)}</td>
                       <td className="numeric">{money(row.rate)}</td>
                       <td className="numeric"><strong>{money(amount)}</strong></td>
+                      <td className="numeric">{money(row.target_rate)}</td>
+                      <td className="numeric">{quantity(row.target_percent, 2)}%</td>
+                      <td className="numeric"><strong>{money(row.target_amount)}</strong></td>
                       <td>{row.claimed_payroll_reference || (claimed ? 'Claimed' : 'Not claimed')}</td>
                       <td><Badge tone={statusTone(claimed ? 'partial' : (row.status || 'active'))}>{titleCase(claimed ? 'claimed' : (row.status || 'open'))}</Badge></td>
                       <td><div className="row-actions"><Button size="small" variant="ghost" icon={Pencil} disabled={claimed || row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td>
@@ -736,6 +733,7 @@ type EmployeePayTerms = {
   monthly_rate: number
   daily_rate: number
   ot_rate: number
+  monthly_incentive: number
   daily_on_conversion: boolean
 }
 
@@ -749,6 +747,7 @@ function employeePayTerms(employee: Employee | null | undefined): EmployeePayTer
     monthly_rate: numberValue(employee?.monthly_rate),
     daily_rate: numberValue(employee?.daily_rate),
     ot_rate: numberValue(employee?.ot_rate),
+    monthly_incentive: numberValue(employee?.monthly_incentive),
     daily_on_conversion: employee?.daily_on_conversion ?? false,
   }
 }
@@ -772,6 +771,7 @@ function employeeValuesWithPayTerms(employee: Employee, terms: EmployeePayTerms)
     monthly_rate: terms.monthly_rate,
     daily_rate: terms.daily_rate,
     ot_rate: terms.ot_rate,
+    monthly_incentive: terms.monthly_incentive,
     daily_on_conversion: terms.daily_on_conversion,
     bank_name: bank.bank_name ?? '',
     bank_branch: bank.branch ?? '',
@@ -867,6 +867,7 @@ function EmployeeDialog({ open, record, mutation, onClose }: { open: boolean; re
       monthly_rate: numberValue(record?.monthly_rate),
       daily_rate: numberValue(record?.daily_rate),
       ot_rate: numberValue(record?.ot_rate),
+      monthly_incentive: numberValue(record?.monthly_incentive),
       daily_on_conversion: record?.daily_on_conversion ?? false,
       bank_name: bank?.bank_name ?? '',
       bank_branch: bank?.branch ?? '',
@@ -875,6 +876,35 @@ function EmployeeDialog({ open, record, mutation, onClose }: { open: boolean; re
       status: record?.status === 'inactive' ? 'inactive' : 'active',
     },
   })
+  useEffect(() => {
+    if (!open) return
+    const currentBank = record?.bank_details
+    form.reset({
+      employee_no: record?.employee_no ?? '',
+      name: record?.name ?? '',
+      nic: record?.nic ?? '',
+      phone: record?.phone ?? '',
+      address: record?.address ?? '',
+      epf_no: record?.epf_no ?? '',
+      etf_ref: record?.etf_ref ?? '',
+      joined_date: record?.joined_date ?? localIsoDate(),
+      left_date: record?.left_date ?? '',
+      job_role: record?.job_role ?? '',
+      employment_type: record?.employment_type ?? '',
+      shift: record?.shift ?? '',
+      pay_model: record?.pay_model ?? 'monthly',
+      monthly_rate: numberValue(record?.monthly_rate),
+      daily_rate: numberValue(record?.daily_rate),
+      ot_rate: numberValue(record?.ot_rate),
+      monthly_incentive: numberValue(record?.monthly_incentive),
+      daily_on_conversion: record?.daily_on_conversion ?? false,
+      bank_name: currentBank?.bank_name ?? '',
+      bank_branch: currentBank?.branch ?? '',
+      bank_account_name: currentBank?.account_name ?? '',
+      bank_account_number: currentBank?.account_number ?? '',
+      status: record?.status === 'inactive' ? 'inactive' : 'active',
+    })
+  }, [open, record?.id])
   const submit = form.handleSubmit((values) => mutation.mutate({ id: record?.id, values }))
   const payModel = form.watch('pay_model')
 
@@ -893,7 +923,7 @@ function EmployeeDialog({ open, record, mutation, onClose }: { open: boolean; re
       `}</style>
       <form className="form-stack employee-editor-form" onSubmit={(event) => void submit(event)}>
         <div className="employee-editor-grid">
-          <Field label="Employee number" error={form.formState.errors.employee_no?.message}><Input {...form.register('employee_no')} /></Field>
+          <Field label="Employee number" hint={record ? 'Generated automatically when this employee was added.' : 'Assigned automatically as the next CKP number when saved.'} error={form.formState.errors.employee_no?.message}><Input readOnly placeholder="CKP 001 · assigned on save" {...form.register('employee_no')} /></Field>
           <Field label="Full name" required error={form.formState.errors.name?.message}><Input {...form.register('name')} /></Field>
           <Field label="NIC"><Input {...form.register('nic')} /></Field>
           <Field label="Phone"><Input type="tel" {...form.register('phone')} /></Field>
@@ -915,6 +945,7 @@ function EmployeeDialog({ open, record, mutation, onClose }: { open: boolean; re
             <Field label="Monthly rate" error={form.formState.errors.monthly_rate?.message}><Input type="number" min="0" step="0.01" disabled={payModel === 'daily' || payModel === 'piecework'} {...form.register('monthly_rate')} /></Field>
             <Field label="Daily rate" error={form.formState.errors.daily_rate?.message}><Input type="number" min="0" step="0.01" disabled={payModel === 'monthly' || payModel === 'piecework'} {...form.register('daily_rate')} /></Field>
             <Field label="OT rate"><Input type="number" min="0" step="0.01" {...form.register('ot_rate')} /></Field>
+            <Field label="Monthly Incentive" hint="Hourly Target = Monthly Incentive ÷ 200"><Input type="number" min="0" step="0.01" {...form.register('monthly_incentive')} /></Field>
           </div>
           <label className="check-field"><input type="checkbox" {...form.register('daily_on_conversion')} /><span>Count conversion days toward daily work</span></label>
           <p className="employee-pay-note">Monthly and Hybrid employees require a monthly rate. Daily and Hybrid employees require a daily rate. Piecework is paid from recorded piecework claims. OT remains optional and is available when posting payroll.</p>
@@ -933,35 +964,53 @@ function EmployeeDialog({ open, record, mutation, onClose }: { open: boolean; re
 }
 
 function DailyWorkDialog({ open, record, mutation, onClose }: { open: boolean; record: DailyWork | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string | undefined; body: DailyWorkValues }>>; onClose: () => void }) {
+  const [employee, setEmployee] = useState<Employee | null>(null)
   const form = useForm<DailyWorkValues>({
     resolver: zodResolver(dailyWorkSchema),
-    values: {
+    defaultValues: {
       employee_id: record?.employee_id ?? '',
       work_date: record?.work_date ?? localIsoDate(),
-      work_units: numberValue(record?.work_units) || 1,
-      daily_rate: numberValue(record?.daily_rate),
+      target_percent: numberValue(record?.target_percent),
       notes: record?.notes ?? '',
-      manual_piecework: (record?.daily_work_piecework ?? []).map((item) => ({ task: item.task, quantity_kg: numberValue(item.quantity_kg), rate_per_kg: numberValue(item.rate_per_kg) })),
     },
   })
-  const fields = useFieldArray({ control: form.control, name: 'manual_piecework' })
+  const recordEmployeeQuery = useQuery({
+    queryKey: ['employee', 'daily-target-dialog', record?.employee_id],
+    queryFn: ({ signal }) => api.get<Employee>(`/employees/${record!.employee_id}`, undefined, signal),
+    enabled: open && Boolean(record?.employee_id),
+  })
+  const activeEmployee = employee ?? recordEmployeeQuery.data ?? null
+  useEffect(() => {
+    if (!open) return
+    setEmployee(null)
+    form.reset({
+      employee_id: record?.employee_id ?? '',
+      work_date: record?.work_date ?? localIsoDate(),
+      target_percent: numberValue(record?.target_percent),
+      notes: record?.notes ?? '',
+    })
+  }, [open, record?.id])
+  const hourlyTarget = numberValue(record?.hourly_target) || numberValue(activeEmployee?.monthly_incentive) / 200
+  const dailyTarget = numberValue(record?.daily_target) || hourlyTarget * 8
+  const targetPercent = numberValue(form.watch('target_percent'))
+  const targetAmount = dailyTarget * targetPercent / 100
   const submit = form.handleSubmit((body) => mutation.mutate({ id: record?.id, body }))
 
   return (
     <Dialog
       open={open}
-      title={record ? 'Correct daily work' : 'Record daily work'}
-      description="Record the day once. The saved daily rate and piecework remain attached to this work record when payroll is posted."
+      title={record ? 'Correct Daily Target' : 'Record Daily Target'}
+      description="The Daily Target covers exactly 8 hours. Enter the achieved percentage manually from 0 to 100."
       size="workspace"
       onClose={onClose}
       closeDisabled={mutation.isPending}
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button loading={mutation.isPending} onClick={() => void submit()}>Save daily work</Button></>}
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button loading={mutation.isPending} onClick={() => void submit()}>Save Daily Target</Button></>}
     >
       <style>{`
-        .daily-work-form{gap:11px}.daily-work-main{display:grid;grid-template-columns:minmax(340px,1.8fr) repeat(3,minmax(150px,.72fr));gap:10px 12px;align-items:end}.daily-work-notes{grid-column:1/-1}.daily-piecework-list{display:grid;gap:7px}.daily-piecework-row{position:relative;display:grid;grid-template-columns:minmax(240px,1.6fr) minmax(150px,.7fr) minmax(150px,.7fr) 36px;gap:8px 10px;align-items:end;padding:8px 9px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:#fff}.daily-piecework-row>.icon-button{align-self:end}@container (max-width:900px){.daily-work-main{grid-template-columns:1.5fr 1fr}.daily-piecework-row{grid-template-columns:1fr 1fr}}@container (max-width:560px){.daily-work-main,.daily-piecework-row{grid-template-columns:1fr}.daily-work-notes{grid-column:auto}.daily-piecework-row>.icon-button{position:absolute;top:7px;right:7px}}
+        .daily-target-form{gap:13px}.daily-target-grid{display:grid;grid-template-columns:minmax(300px,1.7fr) repeat(5,minmax(145px,.75fr));gap:10px 12px;align-items:end}.daily-target-metric{min-height:41px;display:flex;align-items:center;padding:8px 11px;border:1px solid var(--border,#d1d5db);border-radius:9px;background:var(--surface-soft,#f8fafc);font-weight:750}.daily-target-note{grid-column:1/-1}.daily-target-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.daily-target-summary .card{padding:12px}.daily-target-summary span{display:block;font-size:11px;color:var(--text-muted,#64748b)}.daily-target-summary strong{display:block;margin-top:4px;font-size:17px}@container (max-width:1100px){.daily-target-grid{grid-template-columns:1.5fr repeat(2,1fr)}.daily-target-summary{grid-template-columns:1fr 1fr}}@container (max-width:620px){.daily-target-grid,.daily-target-summary{grid-template-columns:1fr}.daily-target-note{grid-column:auto}}
       `}</style>
-      <form className="form-stack daily-work-form" onSubmit={(event) => void submit(event)}>
-        <div className="daily-work-main">
+      <form className="form-stack daily-target-form" onSubmit={(event) => void submit(event)}>
+        <div className="daily-target-grid">
           <RemoteSelect<Employee>
             label="Employee"
             endpoint="/employees"
@@ -969,32 +1018,27 @@ function DailyWorkDialog({ open, record, mutation, onClose }: { open: boolean; r
             query={{ status: 'active' }}
             value={form.watch('employee_id')}
             onChange={(value) => form.setValue('employee_id', value, { shouldValidate: true })}
-            onSelectItem={(employee) => { if (employee) form.setValue('daily_rate', numberValue(employee.daily_rate), { shouldDirty: true, shouldValidate: true }) }}
+            onSelectItem={(selected) => setEmployee(selected ?? null)}
             optionValue={(employee) => employee.id}
             optionLabel={(employee) => `${employee.name} · ${employee.employee_no || 'No number'}`}
             required
+            disabled={Boolean(record)}
             error={form.formState.errors.employee_id?.message}
-            selectedLabel={record ? `Current employee · ${record.employee_id.slice(0, 8)}…` : undefined}
+            selectedLabel={record ? `${record.employee_name || 'Current employee'} · ${record.employee_no || record.employee_id.slice(0, 8)}` : undefined}
           />
           <Field label="Work date" required><Input type="date" {...form.register('work_date')} /></Field>
-          <Field label="Work units" required error={form.formState.errors.work_units?.message}><Input type="number" min="0.000001" step="0.25" {...form.register('work_units')} /></Field>
-          <Field label="Daily rate" required hint="Loaded from employee; this work record keeps its own saved rate." error={form.formState.errors.daily_rate?.message}><Input type="number" min="0.01" step="0.01" {...form.register('daily_rate')} /></Field>
-          <Field label="Notes" className="daily-work-notes"><Textarea rows={2} {...form.register('notes')} /></Field>
+          <Field label="Target hours" hint="Daily Target is limited to 8 hours."><div className="daily-target-metric">8.00 hours</div></Field>
+          <Field label="Hourly Target" hint="Monthly Incentive ÷ 200"><div className="daily-target-metric">{money(hourlyTarget)}</div></Field>
+          <Field label="Daily Target" hint="Hourly Target × 8"><div className="daily-target-metric">{money(dailyTarget)}</div></Field>
+          <Field label="Target %" required error={form.formState.errors.target_percent?.message}><Input type="number" min="0" max="100" step="0.01" {...form.register('target_percent')} /></Field>
+          <Field label="Notes" className="daily-target-note"><Textarea rows={2} {...form.register('notes')} /></Field>
         </div>
-
-        <SectionTitle title="Manual piecework" description="Add only piecework completed on this same work day." actions={<Button type="button" size="small" variant="secondary" icon={Plus} onClick={() => fields.append({ task: '', quantity_kg: 0, rate_per_kg: 0 })}>Add piecework</Button>} />
-        {fields.fields.length ? (
-          <div className="daily-piecework-list">
-            {fields.fields.map((fieldItem, index) => (
-              <div className="daily-piecework-row" key={fieldItem.id}>
-                <Field label="Task" required error={form.formState.errors.manual_piecework?.[index]?.task?.message}><Controller control={form.control} name={`manual_piecework.${index}.task`} render={({ field }) => <ManualSelect label={`Task ${index + 1}`} value={field.value} onChange={field.onChange} options={['Sorting', 'Cleaning', 'Cutting', 'Packing', 'Loading']} />} /></Field>
-                <Field label="Quantity kg" required><Input type="number" min="0.000001" step="0.001" {...form.register(`manual_piecework.${index}.quantity_kg`)} /></Field>
-                <Field label="Rate per kg" required><Input type="number" min="0.01" step="0.01" {...form.register(`manual_piecework.${index}.rate_per_kg`)} /></Field>
-                <button type="button" className="icon-button icon-button--danger" onClick={() => fields.remove(index)} aria-label={`Remove piecework line ${index + 1}`}><Trash2 size={17} /></button>
-              </div>
-            ))}
-          </div>
-        ) : <EmptyState message="No manual piecework on this work day." />}
+        <div className="daily-target-summary">
+          <Card><span>Monthly Incentive</span><strong>{money(activeEmployee?.monthly_incentive)}</strong></Card>
+          <Card><span>Hourly Target</span><strong>{money(hourlyTarget)}</strong></Card>
+          <Card><span>8-hour Daily Target</span><strong>{money(dailyTarget)}</strong></Card>
+          <Card><span>Daily Target Amount</span><strong>{money(targetAmount)}</strong></Card>
+        </div>
       </form>
     </Dialog>
   )
@@ -1004,7 +1048,7 @@ function OvertimeDialog({ open, record, initialEmployee, mutation, onClose }: {
   open: boolean
   record: OvertimeRecord | null
   initialEmployee: Employee | null
-  mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string | undefined; values: OvertimeValues; employee: Employee | null }>>
+  mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string | undefined; values: OvertimeValues }>>
   onClose: () => void
 }) {
   const [employee, setEmployee] = useState<Employee | null>(initialEmployee)
@@ -1014,9 +1058,8 @@ function OvertimeDialog({ open, record, initialEmployee, mutation, onClose }: {
       employee_id: record?.employee_id ?? initialEmployee?.id ?? '',
       work_date: record?.work_date ?? localIsoDate(),
       hours: numberValue(record?.hours),
-      rate: numberValue(record?.rate),
+      target_percent: numberValue(record?.target_percent),
       notes: record?.notes ?? '',
-      update_employee_rate: false,
     },
   })
 
@@ -1033,29 +1076,39 @@ function OvertimeDialog({ open, record, initialEmployee, mutation, onClose }: {
       employee_id: record?.employee_id ?? initialEmployee?.id ?? '',
       work_date: record?.work_date ?? localIsoDate(),
       hours: numberValue(record?.hours),
-      rate: numberValue(record?.rate),
+      target_percent: numberValue(record?.target_percent),
       notes: record?.notes ?? '',
-      update_employee_rate: false,
     })
   }, [record?.id, initialEmployee?.id, open])
 
   const hours = numberValue(form.watch('hours'))
-  const rate = numberValue(form.watch('rate'))
-  const amount = hours * rate
-  const submit = form.handleSubmit((values) => mutation.mutate({ id: record?.id, values, employee: activeEmployee }))
+  const employeeId = form.watch('employee_id')
+  const workDate = form.watch('work_date')
+  const targetPercent = numberValue(form.watch('target_percent'))
+  const otRate = numberValue(record?.rate) || numberValue(activeEmployee?.ot_rate)
+  const targetRate = numberValue(record?.target_rate) || numberValue(activeEmployee?.monthly_incentive) / 200
+  const otAmount = hours * otRate
+  const targetAmount = targetRate * hours * targetPercent / 100
+  const completedTargetQuery = useQuery({
+    queryKey: ['daily-target', 'overtime-check', employeeId, workDate],
+    queryFn: ({ signal }) => api.list<DailyWork>('/daily-work', { employee_id: employeeId, from_date: workDate, to_date: workDate, page: 1, page_size: 5 }, signal),
+    enabled: open && Boolean(employeeId) && Boolean(workDate),
+  })
+  const dailyTargetReady = (completedTargetQuery.data?.items ?? []).some((item) => item.work_date === workDate && item.status !== 'reversed')
+  const submit = form.handleSubmit((values) => mutation.mutate({ id: record?.id, values }))
 
   return (
     <Dialog
       open={open}
       title={record ? 'Edit OT hours' : 'Add OT hours'}
-      description="Save overtime on the date it was worked. Payroll later uses the saved hours and saved rate for the selected salary month."
+      description="OT can be recorded only after the employee's 8-hour Daily Target exists for the same date. OT Pay and OT Target allowance are calculated separately."
       size="workspace"
       onClose={onClose}
       closeDisabled={mutation.isPending}
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button loading={mutation.isPending} onClick={() => void submit()}>Save OT</Button></>}
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button loading={mutation.isPending} disabled={!dailyTargetReady || otRate <= 0 || targetRate <= 0} onClick={() => void submit()}>Save OT</Button></>}
     >
       <style>{`
-        .ot-entry-form{gap:11px}.ot-entry-grid{display:grid;grid-template-columns:minmax(340px,1.8fr) repeat(3,minmax(150px,.72fr));gap:10px 12px;align-items:end}.ot-entry-summary{margin-top:2px;padding:10px 12px;border:1px solid var(--border,#e5e7eb);border-radius:11px;background:var(--surface-soft,#f8fafc);display:flex;align-items:center;justify-content:space-between;gap:14px}.ot-entry-summary span{font-size:12px;color:var(--text-muted,#64748b)}.ot-entry-summary strong{font-size:18px}.ot-entry-note{margin-top:0}@container (max-width:900px){.ot-entry-grid{grid-template-columns:1.6fr 1fr}.ot-entry-summary{align-items:flex-start;flex-wrap:wrap}}@container (max-width:560px){.ot-entry-grid{grid-template-columns:1fr}.ot-entry-summary{align-items:flex-start;flex-direction:column}}
+        .ot-entry-form{gap:11px}.ot-entry-grid{display:grid;grid-template-columns:minmax(300px,1.7fr) repeat(6,minmax(130px,.72fr));gap:10px 12px;align-items:end}.ot-readonly{min-height:41px;display:flex;align-items:center;padding:8px 11px;border:1px solid var(--border,#d1d5db);border-radius:9px;background:var(--surface-soft,#f8fafc);font-weight:750}.ot-entry-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.ot-entry-summary .card{padding:12px}.ot-entry-summary span{display:block;font-size:11px;color:var(--text-muted,#64748b)}.ot-entry-summary strong{display:block;margin-top:4px;font-size:18px}.ot-entry-note{margin-top:0}.ot-target-state{padding:9px 11px;border-radius:9px;font-size:12px;background:var(--surface-soft,#f8fafc);color:var(--text-muted,#64748b)}.ot-target-state.ready{color:#176647;background:#e8f7f0}@container (max-width:1150px){.ot-entry-grid{grid-template-columns:1.5fr repeat(3,1fr)}}@container (max-width:760px){.ot-entry-grid,.ot-entry-summary{grid-template-columns:1fr 1fr}}@container (max-width:560px){.ot-entry-grid,.ot-entry-summary{grid-template-columns:1fr}}
       `}</style>
       <form className="form-stack ot-entry-form" onSubmit={(event) => void submit(event)}>
         <div className="ot-entry-grid">
@@ -1068,7 +1121,6 @@ function OvertimeDialog({ open, record, initialEmployee, mutation, onClose }: {
             onChange={(value) => form.setValue('employee_id', value, { shouldValidate: true })}
             onSelectItem={(selected) => {
               setEmployee(selected ?? null)
-              if (selected) form.setValue('rate', numberValue(selected.ot_rate), { shouldDirty: true, shouldValidate: true })
             }}
             optionValue={(item) => item.id}
             optionLabel={(item) => `${item.name} · ${item.employee_no || 'No number'}`}
@@ -1079,9 +1131,12 @@ function OvertimeDialog({ open, record, initialEmployee, mutation, onClose }: {
           />
           <Field label="OT date" required><Input type="date" {...form.register('work_date')} /></Field>
           <Field label="OT hours" required error={form.formState.errors.hours?.message}><Input type="number" min="0.01" max="24" step="0.25" {...form.register('hours')} /></Field>
-          <Field label="OT rate" required error={form.formState.errors.rate?.message}><Input type="number" min="0.01" step="0.01" {...form.register('rate')} /></Field>
+          <Field label="OT Rate" hint="Pulled from Add Employee"><div className="ot-readonly">{money(otRate)}</div></Field>
+          <Field label="OT Target Rate" hint="Monthly Incentive ÷ 200"><div className="ot-readonly">{money(targetRate)}</div></Field>
+          <Field label="OT Target %" required error={form.formState.errors.target_percent?.message}><Input type="number" min="0" max="100" step="0.01" {...form.register('target_percent')} /></Field>
         </div>
-        <div className="ot-entry-summary"><div><span>Calculated OT amount</span><strong>{money(amount)}</strong>{activeEmployee ? <small className="table-subtext">Current saved OT rate: {money(activeEmployee.ot_rate)}</small> : recordEmployeeQuery.isFetching ? <small className="table-subtext">Loading employee pay terms…</small> : null}</div><label className="check-field"><input type="checkbox" {...form.register('update_employee_rate')} /><span>Save this OT rate as the employee's default OT rate for future entries</span></label></div>
+        <div className={`ot-target-state${dailyTargetReady ? ' ready' : ''}`}>{completedTargetQuery.isLoading ? 'Checking the 8-hour Daily Target…' : dailyTargetReady ? '8-hour Daily Target completed for this date. OT can be assigned.' : 'Record the 8-hour Daily Target for this employee and date before adding OT.'}</div>
+        <div className="ot-entry-summary"><Card><span>OT Pay Amount</span><strong>{money(otAmount)}</strong></Card><Card><span>OT Target Amount</span><strong>{money(targetAmount)}</strong></Card><Card><span>Total OT earnings</span><strong>{money(otAmount + targetAmount)}</strong></Card></div>
         <Field label="Notes" className="ot-entry-note"><Textarea rows={2} placeholder="Optional note about the overtime work" {...form.register('notes')} /></Field>
       </form>
     </Dialog>
@@ -1094,7 +1149,7 @@ function payrollDetails(record: Payroll | null, kinds: string[]) {
 
 type PayrollEditorSection = 'work' | 'additions' | 'deductions' | 'contributions'
 
-function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; record: Payroll | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string | undefined; body: Omit<PayrollValues, 'claim_ids' | 'overtime_ids'> & { overtime_ids: string[]; daily_work_ids: string[]; conversion_worker_ids: string[]; manual_piecework_ids: string[] } }>>; onClose: () => void }) {
+function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; record: Payroll | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string | undefined; body: Omit<PayrollValues, 'claim_ids'> & { daily_work_ids: string[]; conversion_worker_ids: string[]; manual_piecework_ids: string[] } }>>; onClose: () => void }) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const recordEarningLines = payrollDetails(record, ['earning'])
@@ -1124,6 +1179,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
       employer_contributions: contributionLines.map(toEditableDeduction),
       claim_ids: [],
       overtime_ids: [],
+      daily_target_ids: [],
     },
   })
 
@@ -1149,6 +1205,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
       employer_contributions: payrollDetails(record, ['employer_contribution']).map(toEditableDeduction),
       claim_ids: [],
       overtime_ids: [],
+      daily_target_ids: [],
     })
   }, [open, record?.id])
 
@@ -1161,6 +1218,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
     if (!record) {
       form.setValue('claim_ids', [], { shouldDirty: false })
       form.setValue('overtime_ids', [], { shouldDirty: false })
+      form.setValue('daily_target_ids', [], { shouldDirty: false })
     }
   }, [employeeId, salaryMonth, record?.id])
 
@@ -1188,6 +1246,18 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
     enabled: open && Boolean(employeeId) && Boolean(monthRange.from_date),
   })
 
+  const dailyTargetQuery = useQuery({
+    queryKey: ['daily-target', 'payroll-dialog', employeeId, salaryMonth],
+    queryFn: ({ signal }) => api.list<DailyWork>('/daily-work', {
+      employee_id: employeeId,
+      ...monthRange,
+      page: 1,
+      page_size: 100,
+      descending: false,
+    }, signal),
+    enabled: open && Boolean(employeeId) && Boolean(monthRange.from_date),
+  })
+
   const openClaims = (openQuery.data?.items ?? []).filter((item) => {
     const source = String(item.source_type ?? '').toLowerCase()
     const isOvertime = source === 'overtime' || source === 'ot' || source.includes('overtime')
@@ -1199,6 +1269,28 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
     const claimedElsewhere = Boolean(item.claimed_payroll_id && !claimedByThisPayroll)
     return !claimedElsewhere && item.status !== 'reversed' && (!item.work_date || item.work_date.startsWith(salaryMonth))
   })
+  const dailyTargetRows = (dailyTargetQuery.data?.items ?? []).filter((item) => {
+    const claimedByThisPayroll = Boolean(record && item.claimed_payroll_id === record.id)
+    const claimedElsewhere = Boolean(item.claimed_payroll_id && !claimedByThisPayroll)
+    return !claimedElsewhere && item.status !== 'reversed' && (!item.work_date || item.work_date.startsWith(salaryMonth))
+  })
+
+  useEffect(() => {
+    if (!dailyTargetRows.length) {
+      if (!record) form.setValue('daily_target_ids', [], { shouldDirty: false })
+      return
+    }
+    if (record) {
+      const claimedIds = dailyTargetRows.filter((item) => item.claimed_payroll_id === record.id).map((item) => item.id)
+      form.setValue('daily_target_ids', claimedIds, { shouldDirty: false, shouldValidate: true })
+      if (claimedIds.length) {
+        const withoutTargetLines = form.getValues('earnings').filter((line) => String(line.type).toLowerCase() !== 'daily_target_incentive')
+        earnings.replace(withoutTargetLines)
+      }
+    } else {
+      form.setValue('daily_target_ids', dailyTargetRows.map((item) => item.id), { shouldDirty: false, shouldValidate: true })
+    }
+  }, [dailyTargetQuery.dataUpdatedAt, employeeId, salaryMonth, record?.id])
 
   useEffect(() => {
     if (!overtimeRows.length) {
@@ -1209,7 +1301,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
       const claimedIds = overtimeRows.filter((item) => item.claimed_payroll_id === record.id).map((item) => item.id)
       form.setValue('overtime_ids', claimedIds, { shouldDirty: false, shouldValidate: true })
       if (claimedIds.length) {
-        const withoutClaimedOt = form.getValues('earnings').filter((line) => String(line.type).toLowerCase() !== 'overtime')
+        const withoutClaimedOt = form.getValues('earnings').filter((line) => !['overtime', 'overtime_target_allowance'].includes(String(line.type).toLowerCase()))
         earnings.replace(withoutClaimedOt)
       }
     } else {
@@ -1219,17 +1311,20 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
 
   const selectedClaims = form.watch('claim_ids') ?? []
   const selectedOvertimeIds = form.watch('overtime_ids') ?? []
+  const selectedDailyTargetIds = form.watch('daily_target_ids') ?? []
   const watchedEarnings = form.watch('earnings') ?? []
   const watchedDeductions = form.watch('deductions') ?? []
   const watchedContributions = form.watch('employer_contributions') ?? []
   const selectedOpenRows = openClaims.filter((item) => selectedClaims.includes(item.source_id))
   const selectedOvertimeRows = overtimeRows.filter((item) => selectedOvertimeIds.includes(item.id))
+  const selectedDailyTargetRows = dailyTargetRows.filter((item) => selectedDailyTargetIds.includes(item.id))
   const selectedOpenTotal = record ? retainedClaimLines.reduce((sum, line) => sum + numberValue(line.amount), 0) : selectedOpenRows.reduce((sum, item) => sum + numberValue(item.amount), 0)
-  const selectedOvertimeTotal = selectedOvertimeRows.reduce((sum, item) => sum + (numberValue(item.amount) || numberValue(item.hours) * numberValue(item.rate)), 0)
+  const selectedDailyTargetTotal = selectedDailyTargetRows.reduce((sum, item) => sum + numberValue(item.target_amount), 0)
+  const selectedOvertimeTotal = selectedOvertimeRows.reduce((sum, item) => sum + (numberValue(item.amount) || numberValue(item.hours) * numberValue(item.rate)) + numberValue(item.target_amount), 0)
   const manualEarningsTotal = watchedEarnings.reduce((sum, item) => sum + numberValue(item.amount), 0)
   const deductionsTotal = watchedDeductions.reduce((sum, item) => sum + numberValue(item.amount), 0)
   const contributionsTotal = watchedContributions.reduce((sum, item) => sum + numberValue(item.amount), 0)
-  const grossPreview = manualEarningsTotal + selectedOpenTotal + selectedOvertimeTotal
+  const grossPreview = manualEarningsTotal + selectedOpenTotal + selectedDailyTargetTotal + selectedOvertimeTotal
   const netPreview = Math.max(0, grossPreview - deductionsTotal)
   const employerCostPreview = grossPreview + contributionsTotal
 
@@ -1281,6 +1376,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
     setEditorSection('work')
     form.setValue('claim_ids', [], { shouldDirty: false })
     form.setValue('overtime_ids', [], { shouldDirty: false })
+    form.setValue('daily_target_ids', [], { shouldDirty: false })
     if (!record) {
       deductions.replace([])
       contributions.replace([])
@@ -1311,13 +1407,13 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
 
   const selectAllOpenWork = () => form.setValue('claim_ids', openClaims.map((item) => item.source_id), { shouldDirty: true, shouldValidate: true })
   const selectAllOvertime = () => form.setValue('overtime_ids', overtimeRows.map((item) => item.id), { shouldDirty: true, shouldValidate: true })
+  const selectAllDailyTargets = () => form.setValue('daily_target_ids', dailyTargetRows.map((item) => item.id), { shouldDirty: true, shouldValidate: true })
 
   const submit = form.handleSubmit((values) => {
     const claims = openClaims.filter((item) => values.claim_ids.includes(item.source_id))
     const ids = (types: string[]) => claims.filter((item) => types.includes(item.source_type)).map((item) => item.source_id)
-    const { claim_ids: _claimIds, overtime_ids: _overtimeIds, ...base } = values
+    const { claim_ids: _claimIds, ...base } = values
     void _claimIds
-    void _overtimeIds
 
     // Overtime is appended and claimed atomically by the payroll backend from overtime_ids.
     // Do not duplicate OT as a manual earning here.
@@ -1330,6 +1426,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
       body: {
         ...base,
         overtime_ids: values.overtime_ids,
+        daily_target_ids: values.daily_target_ids,
         earnings: earningsWithAccounts,
         deductions: deductionsWithAccounts,
         employer_contributions: contributionsWithAccounts,
@@ -1342,7 +1439,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
   })
 
   const sectionItems: Array<{ value: PayrollEditorSection; label: string; count?: number }> = [
-    { value: 'work', label: 'Work & OT', count: (record ? retainedClaimLines.length : selectedClaims.length) + selectedOvertimeIds.length },
+    { value: 'work', label: 'Work & OT', count: (record ? retainedClaimLines.length : selectedClaims.length) + selectedDailyTargetIds.length + selectedOvertimeIds.length },
     { value: 'additions', label: 'Additions', count: earnings.fields.length },
     { value: 'deductions', label: 'Deductions', count: deductions.fields.length },
     { value: 'contributions', label: 'Employer contributions', count: contributions.fields.length },
@@ -1358,7 +1455,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
       closeDisabled={mutation.isPending || savePayTermsMutation.isPending}
     >
       <style>{`
-        .payroll-editor{display:grid;gap:10px;min-width:0;padding-bottom:2px}.payroll-editor__top{display:grid;grid-template-columns:minmax(330px,1.8fr) repeat(4,minmax(145px,.72fr));gap:9px 11px;align-items:end}.payroll-editor__terms{border:1px solid var(--border,#e5e7eb);border-radius:12px;background:#fff;padding:10px 12px}.payroll-editor__terms-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.payroll-editor__terms-values{display:flex;gap:10px 18px;flex-wrap:wrap;margin-top:6px}.payroll-editor__terms-values span{font-size:11.5px;color:var(--text-muted,#64748b)}.payroll-editor__terms-values b{color:var(--text,#111827);margin-left:4px}.payroll-editor__terms-form{display:grid;grid-template-columns:1.1fr repeat(3,minmax(130px,.75fr)) auto;gap:8px 10px;align-items:end;margin-top:9px}.payroll-editor__summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.payroll-editor__metric{padding:8px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:#fff}.payroll-editor__metric span{display:block;font-size:10px;color:var(--text-muted,#64748b);margin-bottom:3px}.payroll-editor__metric strong{font-size:14px}.payroll-editor__nav{display:flex;gap:5px;overflow-x:auto;border-bottom:1px solid var(--border,#e5e7eb);padding-bottom:7px}.payroll-editor__nav button{border:0;background:transparent;color:var(--text-muted,#64748b);font:inherit;font-size:12.5px;font-weight:700;padding:7px 9px;border-radius:8px;cursor:pointer;white-space:nowrap}.payroll-editor__nav button:hover{background:var(--surface-soft,#f8fafc);color:var(--text,#111827)}.payroll-editor__nav button.active{background:var(--surface-soft,#f1f5f9);color:var(--text,#111827)}.payroll-editor__nav small{margin-left:5px;font-size:9.5px}.payroll-editor__panel{border:1px solid var(--border,#e5e7eb);border-radius:12px;background:#fff;padding:11px 12px;min-width:0}.payroll-work-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.payroll-claim-list{display:grid;gap:6px;max-height:285px;overflow:auto;padding-right:2px}.payroll-claim{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--border,#e5e7eb);border-radius:9px;padding:7px 9px;background:#fff}.payroll-claim span{min-width:0}.payroll-claim strong,.payroll-claim small{display:block}.payroll-claim small{margin-top:1px;color:var(--text-muted,#64748b);font-size:10.5px}.payroll-editor__footer{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border,#e5e7eb);border-radius:11px;background:rgba(255,255,255,.97);backdrop-filter:blur(10px)}.payroll-editor__footer small{display:block;margin-top:1px;color:var(--text-muted,#64748b)}.payroll-editor__actions{display:flex;gap:7px;flex-wrap:wrap}.payroll-line-list{display:grid;gap:7px}.payroll-line-row{display:grid;grid-template-columns:minmax(190px,1.15fr) minmax(220px,1.45fr) minmax(90px,.45fr) minmax(110px,.55fr) minmax(130px,.65fr) 36px;gap:7px 9px;align-items:end;border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:8px 9px}.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:minmax(200px,1fr) minmax(250px,1.5fr) minmax(140px,.6fr) 36px}.payroll-line-empty{padding:14px;border:1px dashed var(--border,#d1d5db);border-radius:10px;color:var(--text-muted,#64748b);text-align:center}.payroll-panel-actions{display:flex;gap:6px;flex-wrap:wrap}.payroll-subsection-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}.payroll-subsection-title h4{margin:0;font-size:13.5px}.payroll-subsection-title span{font-size:10.5px;color:var(--text-muted,#64748b)}@container (max-width:1180px){.payroll-editor__top{grid-template-columns:minmax(260px,1.5fr) repeat(2,minmax(150px,1fr))}.payroll-editor__terms-form{grid-template-columns:repeat(3,minmax(150px,1fr))}.payroll-editor__summary{grid-template-columns:repeat(4,1fr)}.payroll-line-row{grid-template-columns:repeat(3,minmax(160px,1fr))}.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:repeat(3,minmax(160px,1fr))}.payroll-line-row>.icon-button{align-self:end}}@container (max-width:850px){.payroll-editor__top{grid-template-columns:1fr 1fr}.payroll-editor__terms-form{grid-template-columns:1fr 1fr}.payroll-editor__summary{grid-template-columns:1fr 1fr}.payroll-work-grid{grid-template-columns:1fr}.payroll-line-row,.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:1fr 1fr}.payroll-editor__footer{position:static}}@container (max-width:560px){.payroll-editor__top,.payroll-editor__terms-form,.payroll-editor__summary,.payroll-line-row,.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:1fr}.payroll-editor__footer{align-items:flex-start;flex-direction:column}.payroll-editor__actions{width:100%}.payroll-editor__actions .button{flex:1}}
+        .payroll-editor{display:grid;gap:10px;min-width:0;padding-bottom:2px}.payroll-editor__top{display:grid;grid-template-columns:minmax(330px,1.8fr) repeat(4,minmax(145px,.72fr));gap:9px 11px;align-items:end}.payroll-editor__terms{border:1px solid var(--border,#e5e7eb);border-radius:12px;background:#fff;padding:10px 12px}.payroll-editor__terms-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.payroll-editor__terms-values{display:flex;gap:10px 18px;flex-wrap:wrap;margin-top:6px}.payroll-editor__terms-values span{font-size:11.5px;color:var(--text-muted,#64748b)}.payroll-editor__terms-values b{color:var(--text,#111827);margin-left:4px}.payroll-editor__terms-form{display:grid;grid-template-columns:1.1fr repeat(4,minmax(130px,.75fr)) auto;gap:8px 10px;align-items:end;margin-top:9px}.payroll-editor__summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.payroll-editor__metric{padding:8px 10px;border:1px solid var(--border,#e5e7eb);border-radius:10px;background:#fff}.payroll-editor__metric span{display:block;font-size:10px;color:var(--text-muted,#64748b);margin-bottom:3px}.payroll-editor__metric strong{font-size:14px}.payroll-editor__nav{display:flex;gap:5px;overflow-x:auto;border-bottom:1px solid var(--border,#e5e7eb);padding-bottom:7px}.payroll-editor__nav button{border:0;background:transparent;color:var(--text-muted,#64748b);font:inherit;font-size:12.5px;font-weight:700;padding:7px 9px;border-radius:8px;cursor:pointer;white-space:nowrap}.payroll-editor__nav button:hover{background:var(--surface-soft,#f8fafc);color:var(--text,#111827)}.payroll-editor__nav button.active{background:var(--surface-soft,#f1f5f9);color:var(--text,#111827)}.payroll-editor__nav small{margin-left:5px;font-size:9.5px}.payroll-editor__panel{border:1px solid var(--border,#e5e7eb);border-radius:12px;background:#fff;padding:11px 12px;min-width:0}.payroll-work-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.payroll-claim-list{display:grid;gap:6px;max-height:285px;overflow:auto;padding-right:2px}.payroll-claim{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--border,#e5e7eb);border-radius:9px;padding:7px 9px;background:#fff}.payroll-claim span{min-width:0}.payroll-claim strong,.payroll-claim small{display:block}.payroll-claim small{margin-top:1px;color:var(--text-muted,#64748b);font-size:10.5px}.payroll-editor__footer{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border,#e5e7eb);border-radius:11px;background:rgba(255,255,255,.97);backdrop-filter:blur(10px)}.payroll-editor__footer small{display:block;margin-top:1px;color:var(--text-muted,#64748b)}.payroll-editor__actions{display:flex;gap:7px;flex-wrap:wrap}.payroll-line-list{display:grid;gap:7px}.payroll-line-row{display:grid;grid-template-columns:minmax(190px,1.15fr) minmax(220px,1.45fr) minmax(90px,.45fr) minmax(110px,.55fr) minmax(130px,.65fr) 36px;gap:7px 9px;align-items:end;border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:8px 9px}.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:minmax(200px,1fr) minmax(250px,1.5fr) minmax(140px,.6fr) 36px}.payroll-line-empty{padding:14px;border:1px dashed var(--border,#d1d5db);border-radius:10px;color:var(--text-muted,#64748b);text-align:center}.payroll-panel-actions{display:flex;gap:6px;flex-wrap:wrap}.payroll-subsection-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}.payroll-subsection-title h4{margin:0;font-size:13.5px}.payroll-subsection-title span{font-size:10.5px;color:var(--text-muted,#64748b)}@container (max-width:1180px){.payroll-editor__top{grid-template-columns:minmax(260px,1.5fr) repeat(2,minmax(150px,1fr))}.payroll-editor__terms-form{grid-template-columns:repeat(3,minmax(150px,1fr))}.payroll-editor__summary{grid-template-columns:repeat(4,1fr)}.payroll-work-grid{grid-template-columns:1fr 1fr}.payroll-line-row{grid-template-columns:repeat(3,minmax(160px,1fr))}.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:repeat(3,minmax(160px,1fr))}.payroll-line-row>.icon-button{align-self:end}}@container (max-width:850px){.payroll-editor__top{grid-template-columns:1fr 1fr}.payroll-editor__terms-form{grid-template-columns:1fr 1fr}.payroll-editor__summary{grid-template-columns:1fr 1fr}.payroll-work-grid{grid-template-columns:1fr}.payroll-line-row,.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:1fr 1fr}.payroll-editor__footer{position:static}}@container (max-width:560px){.payroll-editor__top,.payroll-editor__terms-form,.payroll-editor__summary,.payroll-line-row,.payroll-line-row--deduction,.payroll-line-row--contribution{grid-template-columns:1fr}.payroll-editor__footer{align-items:flex-start;flex-direction:column}.payroll-editor__actions{width:100%}.payroll-editor__actions .button{flex:1}}
       `}</style>
       <form className="payroll-editor" onSubmit={(event) => void submit(event)}>
         <div className="payroll-editor__top">
@@ -1389,7 +1486,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
             <Button type="button" size="small" variant="secondary" disabled={!selectedEmployee || Boolean(record)} onClick={() => setEditPayTerms((value) => !value)}>{editPayTerms ? 'Done' : 'Edit rates'}</Button>
           </div>
           <div className="payroll-editor__terms-values">
-            <span>Pay model <b>{titleCase(payTerms.pay_model)}</b></span><span>Monthly <b>{money(payTerms.monthly_rate)}</b></span><span>Daily <b>{money(payTerms.daily_rate)}</b></span><span>OT <b>{money(payTerms.ot_rate)}</b></span>
+            <span>Pay model <b>{titleCase(payTerms.pay_model)}</b></span><span>Monthly <b>{money(payTerms.monthly_rate)}</b></span><span>Daily <b>{money(payTerms.daily_rate)}</b></span><span>OT <b>{money(payTerms.ot_rate)}</b></span><span>Monthly Incentive <b>{money(payTerms.monthly_incentive)}</b></span>
           </div>
           {editPayTerms ? (
             <div className="payroll-editor__terms-form">
@@ -1397,6 +1494,7 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
               <Field label="Monthly rate"><Input type="number" min="0" step="0.01" value={payTerms.monthly_rate} onChange={(event) => setPayTerms((current) => ({ ...current, monthly_rate: numberValue(event.target.value) }))} /></Field>
               <Field label="Daily rate"><Input type="number" min="0" step="0.01" value={payTerms.daily_rate} onChange={(event) => setPayTerms((current) => ({ ...current, daily_rate: numberValue(event.target.value) }))} /></Field>
               <Field label="OT rate"><Input type="number" min="0" step="0.01" value={payTerms.ot_rate} onChange={(event) => setPayTerms((current) => ({ ...current, ot_rate: numberValue(event.target.value) }))} /></Field>
+              <Field label="Monthly Incentive"><Input type="number" min="0" step="0.01" value={payTerms.monthly_incentive} onChange={(event) => setPayTerms((current) => ({ ...current, monthly_incentive: numberValue(event.target.value) }))} /></Field>
               <Button type="button" size="small" disabled={!payTermsValid} loading={savePayTermsMutation.isPending} onClick={savePayTerms}>Save rates</Button>
             </div>
           ) : null}
@@ -1417,12 +1515,16 @@ function PayrollDialog({ open, record, mutation, onClose }: { open: boolean; rec
           <section className="payroll-editor__panel">
             <div className="payroll-work-grid">
               <div>
+                <div className="payroll-subsection-title"><div><h4>Daily Target allowance</h4><span>{monthLabel(salaryMonth)} · {money(selectedDailyTargetTotal)}</span></div>{dailyTargetRows.length ? <div className="payroll-panel-actions"><Button type="button" size="small" variant="secondary" onClick={selectAllDailyTargets}>Select all</Button><Button type="button" size="small" variant="ghost" onClick={() => form.setValue('daily_target_ids', [], { shouldDirty: true })}>Clear</Button></div> : null}</div>
+                {dailyTargetQuery.isLoading ? <LoadingState /> : dailyTargetQuery.isError ? <ErrorState error={dailyTargetQuery.error} onRetry={() => void dailyTargetQuery.refetch()} /> : dailyTargetRows.length ? <div className="payroll-claim-list">{dailyTargetRows.map((item) => <label className="payroll-claim" key={item.id}><input type="checkbox" value={item.id} {...form.register('daily_target_ids')} /><span><strong>{shortDate(item.work_date)} · Daily Target</strong><small>8 hours · {quantity(item.target_percent, 2)}% · target {money(item.daily_target)}</small></span><b>{money(item.target_amount)}</b></label>)}</div> : <EmptyState message={employeeId ? `No unclaimed Daily Targets exist for ${monthLabel(salaryMonth)}.` : 'Select an employee first.'} />}
+              </div>
+              <div>
                 <div className="payroll-subsection-title"><div><h4>Recorded daily / piecework</h4><span>{monthLabel(salaryMonth)} · {money(selectedOpenTotal)}</span></div>{!record && openClaims.length ? <div className="payroll-panel-actions"><Button type="button" size="small" variant="secondary" onClick={selectAllOpenWork}>Select all</Button><Button type="button" size="small" variant="ghost" onClick={() => form.setValue('claim_ids', [], { shouldDirty: true })}>Clear</Button></div> : null}</div>
                 {record ? (retainedClaimLines.length ? <div className="payroll-claim-list">{retainedClaimLines.map((line, index) => <div className="payroll-claim" key={`retained-work-${line.id || index}`}><span aria-hidden="true">✓</span><span><strong>{payrollDetailLabel(line)}</strong><small>{payrollDetailBasis(line)} · retained from {record.reference_no}</small></span><b>{money(line.amount)}</b></div>)}</div> : <EmptyState message="This payroll has no recorded daily or piecework claims." />) : openQuery.isLoading ? <LoadingState /> : openQuery.isError ? <ErrorState error={openQuery.error} onRetry={() => void openQuery.refetch()} /> : openClaims.length ? <div className="payroll-claim-list">{openClaims.map((item) => <label className="payroll-claim" key={`${item.source_type}-${item.source_id}`}><input type="checkbox" value={item.source_id} {...form.register('claim_ids')} /><span><strong>{item.description}</strong><small>{shortDate(item.work_date)} · {titleCase(item.source_type)} · {quantity(item.quantity, 3)} × {money(item.rate)}</small></span><b>{money(item.amount)}</b></label>)}</div> : <EmptyState message={employeeId ? `No unclaimed work exists for ${monthLabel(salaryMonth)}.` : 'Select an employee first.'} />}
               </div>
               <div>
                 <div className="payroll-subsection-title"><div><h4>Recorded overtime</h4><span>{monthLabel(salaryMonth)} · {money(selectedOvertimeTotal)}</span></div>{overtimeRows.length ? <div className="payroll-panel-actions"><Button type="button" size="small" variant="secondary" onClick={selectAllOvertime}>Select all</Button><Button type="button" size="small" variant="ghost" onClick={() => form.setValue('overtime_ids', [], { shouldDirty: true })}>Clear</Button></div> : null}</div>
-                {overtimeQuery.isLoading ? <LoadingState /> : overtimeQuery.isError ? <ErrorState error={overtimeQuery.error} onRetry={() => void overtimeQuery.refetch()} /> : overtimeRows.length ? <div className="payroll-claim-list">{overtimeRows.map((item) => <label className="payroll-claim" key={item.id}><input type="checkbox" value={item.id} {...form.register('overtime_ids')} /><span><strong>{shortDate(item.work_date)} · Overtime</strong><small>{quantity(item.hours, 2)} hours × {money(item.rate)}</small></span><b>{money(numberValue(item.amount) || numberValue(item.hours) * numberValue(item.rate))}</b></label>)}</div> : <EmptyState message={employeeId ? `No unclaimed overtime exists for ${monthLabel(salaryMonth)}.` : 'Select an employee first.'} />}
+                {overtimeQuery.isLoading ? <LoadingState /> : overtimeQuery.isError ? <ErrorState error={overtimeQuery.error} onRetry={() => void overtimeQuery.refetch()} /> : overtimeRows.length ? <div className="payroll-claim-list">{overtimeRows.map((item) => <label className="payroll-claim" key={item.id}><input type="checkbox" value={item.id} {...form.register('overtime_ids')} /><span><strong>{shortDate(item.work_date)} · Overtime</strong><small>OT Pay {money(item.amount)} + Target {money(item.target_amount)}</small></span><b>{money((numberValue(item.amount) || numberValue(item.hours) * numberValue(item.rate)) + numberValue(item.target_amount))}</b></label>)}</div> : <EmptyState message={employeeId ? `No unclaimed overtime exists for ${monthLabel(salaryMonth)}.` : 'Select an employee first.'} />}
               </div>
             </div>
           </section>
@@ -1550,7 +1652,7 @@ function PayrollPostFollowupDialog({ payroll, step, companyName, hidden, onPayLa
   onDone: () => void
 }) {
   const toast = useToast()
-  const sendWhatsApp = () => {
+  const sendWhatsApp = async () => {
     if (!payroll) return
     const phone = normalizeWhatsAppPhone(payroll.employee?.phone)
     if (!phone) {
@@ -1568,7 +1670,22 @@ function PayrollPostFollowupDialog({ payroll, step, companyName, hidden, onPayLa
       paid: numberValue(payroll.paid_amount),
       due: numberValue(payroll.balance_due),
     })
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+    try {
+      const result = await sharePayrollPaysheetPdf({
+        payrolls: [payroll],
+        employee: payroll.employee ?? null,
+        companyName,
+        salaryMonth: payroll.salary_month,
+      }, message)
+      if (result === 'downloaded') {
+        const fallbackMessage = `${message}\n\nThe paysheet PDF has been downloaded. Please attach it to this WhatsApp chat.`
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(fallbackMessage)}`, '_blank', 'noopener,noreferrer')
+        toast.success('Paysheet PDF downloaded', 'Attach the downloaded PDF in the WhatsApp chat that just opened.')
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      toast.error('Paysheet PDF could not be shared', error instanceof Error ? error.message : 'Please try again.')
+    }
   }
 
   return (
@@ -1587,7 +1704,7 @@ function PayrollPostFollowupDialog({ payroll, step, companyName, hidden, onPayLa
           <Card><span className="table-subtext">Paid</span><strong>{money(payroll?.paid_amount)}</strong></Card>
           <Card><span className="table-subtext">Balance due</span><strong>{money(payroll?.balance_due)}</strong></Card>
         </div>
-        {step === 'delivery' ? <div className="row-actions"><Button icon={Printer} onClick={onPrint}>Open / print paysheet</Button><Button variant="secondary" icon={MessageCircle} onClick={sendWhatsApp}>Send WhatsApp message</Button></div> : null}
+        {step === 'delivery' ? <div className="row-actions"><Button icon={Printer} onClick={onPrint}>Open / print paysheet</Button><Button variant="secondary" icon={MessageCircle} onClick={() => void sendWhatsApp()}>Share paysheet PDF</Button></div> : null}
       </div>
     </Dialog>
   )
@@ -1864,7 +1981,7 @@ export function EmployeePayrollProfileDialog({ payroll, companyName, onClose }: 
   const sectionClass = (value: PaysheetSection) => `paysheet-section${section === value ? ' paysheet-section--active' : ''}`
   const employeeDisplayName = payrollEmployeeDisplay(monthlyPayrolls[0] || payroll)
   const employeeNumber = employee.employee_no || payroll.employee_no || '—'
-  const sendPaysheetWhatsApp = () => {
+  const sendPaysheetWhatsApp = async () => {
     const phone = normalizeWhatsAppPhone(employee.phone)
     if (!phone) {
       toast.error('WhatsApp message not opened', 'Add a valid phone number to the employee profile first.')
@@ -1882,7 +1999,22 @@ export function EmployeePayrollProfileDialog({ payroll, companyName, onClose }: 
       paid,
       due,
     })
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
+    try {
+      const result = await sharePayrollPaysheetPdf({
+        payrolls: monthlyPayrolls,
+        employee,
+        companyName,
+        salaryMonth: selectedMonth,
+      }, message)
+      if (result === 'downloaded') {
+        const fallbackMessage = `${message}\n\nThe paysheet PDF has been downloaded. Please attach it to this WhatsApp chat.`
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(fallbackMessage)}`, '_blank', 'noopener,noreferrer')
+        toast.success('Paysheet PDF downloaded', 'Attach the downloaded PDF in the WhatsApp chat that just opened.')
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      toast.error('Paysheet PDF could not be shared', error instanceof Error ? error.message : 'Please try again.')
+    }
   }
 
   return (
@@ -2050,7 +2182,7 @@ export function EmployeePayrollProfileDialog({ payroll, companyName, onClose }: 
                 <strong>{monthLabel(selectedMonth)}</strong>
                 <span className="table-subtext">{monthlyPayrollQuery.isFetching ? 'Loading…' : `${monthlyPayrolls.length} payroll record${monthlyPayrolls.length === 1 ? '' : 's'}`}</span>
               </div>
-              <Button variant="secondary" icon={MessageCircle} onClick={sendPaysheetWhatsApp} disabled={!hasMonthlyPayroll}>WhatsApp</Button>
+              <Button variant="secondary" icon={MessageCircle} onClick={() => void sendPaysheetWhatsApp()} disabled={!hasMonthlyPayroll}>Share PDF</Button>
               <Button variant="secondary" icon={Printer} onClick={() => window.print()} disabled={!hasMonthlyPayroll}>Print / save PDF</Button>
               <Button variant="secondary" onClick={onClose}>Close</Button>
             </div>

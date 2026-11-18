@@ -23,4 +23,5 @@ backend/.env
 .idea/
 .vscode/
 *.log
+supabase/.temp/
 

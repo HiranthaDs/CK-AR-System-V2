@@ -16,6 +16,7 @@ const EmployeesPage = lazy(() => import('./pages/EmployeesPage').then((module) =
 const AccountPage = lazy(() => import('./pages/AccountPage').then((module) => ({ default: module.AccountPage })))
 const ActivityPage = lazy(() => import('./pages/ActivityPage').then((module) => ({ default: module.ActivityPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })))
+const PublicCatalogPage = lazy(() => import('./pages/PublicCatalogPage').then((module) => ({ default: module.PublicCatalogPage })))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((module) => ({ default: module.NotFoundPage })))
 
 function ProtectedApp() {
@@ -52,6 +53,7 @@ export function App() {
   return (
     <Suspense fallback={<div className="full-page-state"><LoadingState label="Loading workspace..." /></div>}>
       <Routes>
+        <Route path="/catalog" element={<PublicCatalogPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/:companyCode/login" element={<LoginPage />} />
         <Route path="/:companyCode/reset-password" element={<LoginPage />} />

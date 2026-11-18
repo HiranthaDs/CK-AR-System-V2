@@ -5,7 +5,6 @@ import {
   Inbox,
   LoaderCircle,
   RefreshCw,
-  Search,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -194,7 +193,6 @@ export function SearchBox({ value, onChange, placeholder = 'Search…', label = 
   return (
     <label className="search-box">
       <span className="sr-only">{label}</span>
-      <Search size={17} aria-hidden="true" />
       <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
     </label>
   )

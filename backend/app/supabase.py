@@ -18,7 +18,7 @@ import httpx
 
 from .config import Settings
 from .errors import ApiError
-from .models import MutationResponse, PageResponse, ProfileAccess
+from .models import MutationResponse, PageResponse, ProfileAccess, PublicOrderReceipt
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,13 @@ READABLE_SOURCES = frozenset(
         "conversion_workers",
         "daily_work",
         "daily_work_piecework",
+        "daily_target_work_view",
         "overtime_work_view",
         "production_runs",
+        "quotations",
+        "quotation_items",
+        "customer_orders",
+        "customer_order_items",
         "sales",
         "sale_items",
         "sale_payments",
@@ -80,8 +85,13 @@ SOURCE_TIEBREAKERS: dict[str, str] = {
     "conversion_workers": "id",
     "daily_work": "id",
     "daily_work_piecework": "id",
+    "daily_target_work_view": "id",
     "overtime_work_view": "id",
     "production_runs": "id",
+    "quotations": "id",
+    "quotation_items": "id",
+    "customer_orders": "id",
+    "customer_order_items": "id",
     "sales": "id",
     "sale_items": "id",
     "sale_payments": "id",
@@ -487,6 +497,85 @@ class SupabaseGateway:
             raise ApiError(502, "ERP transaction returned an invalid result", code="invalid_upstream")
         return MutationResponse.model_validate(data)
 
+    async def public_catalog(self, *, request_id: str) -> list[dict[str, Any]]:
+        data = await self._service_rpc(
+            "erp_public_catalog",
+            payload={},
+            request_id=request_id,
+            retry_safe=True,
+        )
+        if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
+            raise ApiError(502, "Catalogue returned an invalid result", code="invalid_upstream")
+        return data
+
+    async def submit_public_order(
+        self,
+        *,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        request_id: str,
+    ) -> PublicOrderReceipt:
+        data = await self._service_rpc(
+            "erp_submit_public_order",
+            payload={"p_payload": payload, "p_request_key": idempotency_key},
+            request_id=request_id,
+            retry_safe=True,
+            idempotency_key=idempotency_key,
+        )
+        value = self._unwrap_rpc(data)
+        if not isinstance(value, dict):
+            raise ApiError(502, "Order submission returned an invalid result", code="invalid_upstream")
+        return PublicOrderReceipt.model_validate(value)
+
+    async def _service_rpc(
+        self,
+        function_name: str,
+        *,
+        payload: dict[str, Any],
+        request_id: str,
+        retry_safe: bool,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        secret = self._settings.secret_key
+        if not secret:
+            raise ApiError(
+                503,
+                "The public catalogue service is not configured.",
+                code="service_access_not_configured",
+            )
+        headers = {
+            "apikey": secret,
+            "Authorization": f"Bearer {secret}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Accept-Profile": self._settings.supabase_schema,
+            "Content-Profile": self._settings.supabase_schema,
+            "X-Request-ID": request_id,
+            "Cache-Control": "no-store, no-cache",
+        }
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+        try:
+            response = await self._send_with_retry(
+                "POST",
+                f"{self._settings.rest_url}/rpc/{function_name}",
+                headers=headers,
+                json=payload,
+                retry_safe=retry_safe,
+            )
+        except httpx.TimeoutException as exc:
+            raise ApiError(503, "Supabase request timed out", code="supabase_timeout") from exc
+        except httpx.HTTPError as exc:
+            raise ApiError(503, "Supabase is unavailable", code="supabase_unavailable") from exc
+        if response.is_error:
+            raise self._map_error(response)
+        if not response.content:
+            return None
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ApiError(502, "Supabase returned invalid JSON", code="invalid_upstream") from exc
+
     async def create_auth_user(
         self,
         *,
@@ -778,7 +867,7 @@ class SupabaseGateway:
         status = response.status_code
         code = "supabase_error"
         detail = "The database request was rejected"
-        if pg_code in {"PGRST200", "PGRST202", "PGRST204", "PGRST205"}:
+        if pg_code in {"PGRST200", "PGRST202", "PGRST204", "PGRST205", "42703", "42P01"}:
             status, code = 503, "supabase_schema_unavailable"
             detail = (
                 "The Supabase ERP schema update is not deployed. "

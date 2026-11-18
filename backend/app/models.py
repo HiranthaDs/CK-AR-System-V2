@@ -162,6 +162,7 @@ class EmployeeUpsert(ERPModel):
     monthly_rate: Money | None = None
     daily_rate: Money | None = None
     ot_rate: Money | None = None
+    monthly_incentive: Money = Decimal("0")
     pay_effective_from: date | None = None
     standard_hours_per_day: Annotated[Decimal, Field(ge=0, le=24)] = Decimal("0")
     standard_days_per_month: Annotated[Decimal, Field(ge=0, le=31)] = Decimal("0")
@@ -299,12 +300,27 @@ class DailyWorkUpsert(ERPModel):
     )
 
 
+class DailyTargetUpsert(ERPModel):
+    id: UUID | None = None
+    employee_id: UUID
+    work_date: date
+    target_percent: Annotated[
+        Decimal,
+        Field(ge=0, le=100, max_digits=5, decimal_places=2),
+    ]
+    notes: Annotated[str, Field(max_length=2000)] | None = None
+
+
 class OvertimeUpsert(ERPModel):
     id: UUID | None = None
     employee_id: UUID
     work_date: date
     hours: Annotated[Decimal, Field(gt=0, le=24, max_digits=8, decimal_places=2)]
-    rate: PositiveMoney
+    rate: PositiveMoney | None = None
+    target_percent: Annotated[
+        Decimal,
+        Field(ge=0, le=100, max_digits=5, decimal_places=2),
+    ] = Decimal("0")
     notes: Annotated[str, Field(max_length=1000)] | None = None
 
 
@@ -315,6 +331,102 @@ class InventoryItemUpsert(ERPModel):
     stage: InventoryStage
     unit: Annotated[str, Field(min_length=1, max_length=40)]
     is_active: bool = True
+
+
+class ProductUpsert(ERPModel):
+    id: UUID | None = None
+    sku: Annotated[str, Field(max_length=80)] | None = None
+    name: ShortText
+    product_type: Annotated[str, Field(min_length=1, max_length=100)]
+    selling_price: PositiveMoney
+    image_url: Annotated[str, Field(max_length=1000, pattern=r"^https://")] | None = None
+    description: Annotated[str, Field(max_length=2000)] | None = None
+    is_active: bool = True
+
+
+class PublicCatalogItem(FlexibleRecord):
+    id: UUID
+    sku: str
+    name: str
+    category: str
+    image_url: str | None = None
+    selling_price: Money
+    description: str | None = None
+
+
+class PublicCatalogResponse(ERPModel):
+    items: list[PublicCatalogItem]
+
+
+class PublicOrderItemInput(ERPModel):
+    item_id: UUID
+    quantity: Annotated[Decimal, Field(gt=0, le=10000, max_digits=18, decimal_places=6)]
+
+
+class PublicOrderCreate(ERPModel):
+    customer_name: ShortText
+    customer_phone: Annotated[str, Field(min_length=1, max_length=40)]
+    customer_email: Annotated[
+        str,
+        Field(max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$"),
+    ] | None = None
+    customer_address: Annotated[str, Field(max_length=500)] | None = None
+    notes: Annotated[str, Field(max_length=2000)] | None = None
+    items: Annotated[list[PublicOrderItemInput], Field(min_length=1, max_length=50)]
+    website: Annotated[str, Field(max_length=200)] = ""
+
+    @model_validator(mode="after")
+    def validate_public_order(self) -> PublicOrderCreate:
+        if self.website:
+            raise ValueError("Order could not be submitted")
+        item_ids = [item.item_id for item in self.items]
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("Order product IDs must be unique")
+        return self
+
+
+class PublicOrderReceipt(ERPModel):
+    ok: bool = True
+    order_no: str
+    tracking_token: UUID
+    status: Literal["pending", "confirmed", "in_progress", "ready", "completed", "cancelled"]
+    total_amount: Money
+    idempotent: bool = False
+
+
+class CustomerOrderStatusUpdate(ERPModel):
+    status: Literal["pending", "confirmed", "in_progress", "ready", "completed", "cancelled"]
+
+
+class CustomerOrderItemRecord(FlexibleRecord):
+    id: int
+    order_id: UUID
+    item_id: UUID
+    product_name: str
+    product_category: str
+    product_image_url: str | None = None
+    product_description: str | None = None
+    quantity: Quantity
+    unit_price: Money
+    line_total: Money
+
+
+class CustomerOrderRecord(FlexibleRecord):
+    id: UUID
+    order_no: str
+    customer_name: str
+    customer_phone: str
+    customer_email: str | None = None
+    customer_address: str | None = None
+    notes: str | None = None
+    status: Literal["pending", "confirmed", "in_progress", "ready", "completed", "cancelled"]
+    subtotal: Money
+    total_amount: Money
+    source: str
+    created_at: datetime
+    updated_at: datetime
+    status_updated_at: datetime
+    customer_order_items: list[CustomerOrderItemRecord] = Field(default_factory=list)
 
 
 class ProductionPost(ERPModel):
@@ -328,6 +440,7 @@ class ProductionPost(ERPModel):
     chip_name: ShortText | None = None
     finished_item_id: UUID | None = None
     finished_item_name: ShortText | None = None
+    product_type: Annotated[str, Field(max_length=100)] | None = None
     input_kg: PositiveQuantity
     output_quantity: PositiveQuantity
     working_hours: Quantity | None = None
@@ -370,6 +483,44 @@ class SalePost(ERPModel):
     payment_method: PaymentMethod
     amount_paid: Money = Decimal("0")
     items: Annotated[list[SaleItemInput], Field(min_length=1, max_length=500)]
+
+
+class QuotationItemInput(ERPModel):
+    item_id: UUID
+    quantity: PositiveQuantity
+    unit_price: PositiveMoney
+    discount: Money = Decimal("0")
+    notes: Annotated[str, Field(max_length=500)] | None = None
+
+    @model_validator(mode="after")
+    def validate_line(self) -> QuotationItemInput:
+        if self.discount >= self.quantity * self.unit_price:
+            raise ValueError("discount must be less than the line gross amount")
+        return self
+
+
+class QuotationUpsert(ERPModel):
+    id: UUID | None = None
+    quotation_no: ReferenceNo | None = None
+    quotation_date: date
+    valid_until: date
+    customer_name: ShortText
+    customer_phone: Annotated[str, Field(max_length=40)] | None = None
+    customer_email: Annotated[str, Field(max_length=254)] | None = None
+    customer_address: Annotated[str, Field(max_length=500)] | None = None
+    status: Literal["draft", "sent", "accepted", "rejected", "expired", "cancelled"] = "draft"
+    terms: Annotated[str, Field(max_length=4000)] | None = None
+    notes: Annotated[str, Field(max_length=4000)] | None = None
+    items: Annotated[list[QuotationItemInput], Field(min_length=1, max_length=100)]
+
+    @model_validator(mode="after")
+    def validate_dates_and_items(self) -> QuotationUpsert:
+        if self.valid_until < self.quotation_date:
+            raise ValueError("valid_until cannot be before quotation_date")
+        item_ids = [item.item_id for item in self.items]
+        if len(item_ids) != len(set(item_ids)):
+            raise ValueError("quotation product IDs must be unique")
+        return self
 
 
 class SalePaymentPost(ERPModel):
@@ -427,9 +578,14 @@ class PayrollPost(ERPModel):
         default_factory=list
     )
     overtime_ids: Annotated[list[UUID], Field(max_length=500)] = Field(default_factory=list)
+    daily_target_ids: Annotated[list[UUID], Field(max_length=500)] = Field(default_factory=list)
 
     @field_validator(
-        "daily_work_ids", "conversion_worker_ids", "manual_piecework_ids", "overtime_ids"
+        "daily_work_ids",
+        "conversion_worker_ids",
+        "manual_piecework_ids",
+        "overtime_ids",
+        "daily_target_ids",
     )
     @classmethod
     def require_unique_claim_ids(cls, value: list[UUID]) -> list[UUID]:
@@ -455,6 +611,7 @@ class PayrollPost(ERPModel):
             or self.conversion_worker_ids
             or self.manual_piecework_ids
             or self.overtime_ids
+            or self.daily_target_ids
         ):
             raise ValueError("payroll needs an earning or an open-work claim")
         return self
@@ -689,6 +846,7 @@ class EmployeeRecord(FlexibleRecord):
     monthly_rate: Decimal | None = None
     daily_rate: Decimal | None = None
     ot_rate: Decimal | None = None
+    monthly_incentive: Decimal | None = None
     pay_effective_from: date | None = None
     standard_hours_per_day: Decimal | None = None
     standard_days_per_month: Decimal | None = None
@@ -730,6 +888,7 @@ class InventoryPositionRecord(FlexibleRecord):
     inventory_value: Decimal
     average_unit_cost: Decimal
     selling_price: Decimal = Decimal("0")
+    product_type: str | None = None
     last_movement_at: datetime | None = None
     is_active: bool = True
 
@@ -795,6 +954,24 @@ class DailyWorkRecord(FlexibleRecord):
     daily_work_piecework: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class DailyTargetRecord(FlexibleRecord):
+    id: UUID
+    reference_no: str
+    employee_id: UUID
+    employee_no: str | None = None
+    employee_name: str | None = None
+    work_date: date
+    target_hours: Decimal
+    hourly_target: Decimal
+    daily_target: Decimal
+    target_percent: Decimal
+    target_amount: Decimal
+    status: str
+    notes: str | None = None
+    claimed_payroll_id: UUID | None = None
+    claimed_payroll_reference: str | None = None
+
+
 class OvertimeRecord(FlexibleRecord):
     id: UUID
     reference_no: str
@@ -803,6 +980,9 @@ class OvertimeRecord(FlexibleRecord):
     hours: Decimal
     rate: Decimal
     amount: Decimal
+    target_rate: Decimal = Decimal("0")
+    target_percent: Decimal = Decimal("0")
+    target_amount: Decimal = Decimal("0")
     status: str
     employee_no: str | None = None
     employee_name: str | None = None
@@ -878,6 +1058,25 @@ class SaleRecord(FlexibleRecord):
     status: str
     sale_items: list[dict[str, Any]] = Field(default_factory=list)
     sale_payments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class QuotationRecord(FlexibleRecord):
+    id: UUID
+    reference_no: str
+    quotation_no: str
+    quotation_date: date
+    valid_until: date
+    customer_name: str
+    customer_phone: str | None = None
+    customer_email: str | None = None
+    customer_address: str | None = None
+    subtotal: Decimal
+    discount_total: Decimal
+    total_amount: Decimal
+    status: str
+    terms: str | None = None
+    notes: str | None = None
+    quotation_items: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PaymentRecord(FlexibleRecord):

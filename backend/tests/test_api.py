@@ -23,7 +23,7 @@ from app.dependencies import (
 from app.errors import ApiError
 from app.main import create_app
 from app.models import CompanyAccess, MutationResponse, PageResponse, ProfileAccess, PurgeBusinessDataRequest
-from app.routes import production_summary
+from app.routes import production_summary, readiness
 from app.security import VerifiedToken
 from app.supabase import QueryFilter, SupabaseGateway
 
@@ -56,6 +56,35 @@ def test_settings_accept_comma_separated_render_hosts(monkeypatch: pytest.Monkey
 
     assert config.trusted_hosts == ["*.onrender.com", "localhost", "127.0.0.1"]
     assert config.cors_origins == ["https://erp.example.com", "http://localhost:5173"]
+
+
+@pytest.mark.asyncio
+async def test_readiness_returns_all_successful_checks() -> None:
+    calls: list[str] = []
+
+    class HealthGateway:
+        async def auth_health(self) -> None:
+            calls.append("auth")
+
+        async def schema_health(self) -> None:
+            calls.append("schema")
+
+    class Verifier:
+        async def ensure_ready(self) -> None:
+            calls.append("jwks")
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(jwt_verifier=Verifier()))
+    )
+    result = await readiness(request, settings(), HealthGateway())  # type: ignore[arg-type]
+
+    assert result.status == "ready"
+    assert result.checks == {
+        "supabase_auth": "ok",
+        "supabase_jwks": "ok",
+        "supabase_schema": "ok",
+    }
+    assert sorted(calls) == ["auth", "jwks", "schema"]
 
 
 @pytest.mark.asyncio
@@ -925,6 +954,32 @@ async def test_missing_postgrest_relationship_is_reported_as_schema_unavailable(
     assert caught.value.status_code == 503
     assert caught.value.code == "supabase_schema_unavailable"
     assert "migrations" in caught.value.detail
+
+
+@pytest.mark.asyncio
+async def test_missing_database_column_is_reported_as_schema_unavailable() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"code": "42703", "message": "column inventory_items.product_type does not exist"},
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        gateway = SupabaseGateway(settings(), client)
+        with pytest.raises(ApiError) as caught:
+            await gateway.select_page(
+                "sales",
+                token="test-token",
+                request_id="test-request",
+                page=1,
+                page_size=25,
+                select="*,sale_items(*,item:inventory_items(product_type))",
+                order="sale_date.desc",
+                company_id=COMPANY_ID,
+            )
+
+    assert caught.value.status_code == 503
+    assert caught.value.code == "supabase_schema_unavailable"
 
 
 @pytest.mark.asyncio

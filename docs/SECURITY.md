@@ -15,7 +15,7 @@ The Supabase `sb_secret_...` value supplied during development must be rotated i
 
 1. Rotate the disclosed secret key.
 2. Disable public signup before applying the database; use controlled invitations or administrator-created identities.
-3. Review every existing Auth identity. Verify that `hiranthadiass4@gmail.com` and `asela78@gmail.com` are the intended group super-admins; all other users require an explicit company/capability assignment.
+3. Review every existing Auth identity. Verify that `hiranthadiass4@gmail.com` and `info@ck-plastics.com` are the intended group super-admins; all other users require an explicit company/capability assignment.
 4. Set exact frontend origins in `CORS_ORIGINS` and exact public hostnames in `TRUSTED_HOSTS`; do not use `*` with credentials.
 5. Serve React and FastAPI only through HTTPS.
 6. Keep JWKS verification pinned to ES256, the exact issuer, and audience `authenticated`.

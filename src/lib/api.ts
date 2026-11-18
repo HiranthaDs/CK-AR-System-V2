@@ -178,6 +178,57 @@ export async function apiRequest<TResponse, TBody = unknown>(
   return payload as TResponse
 }
 
+export async function publicApiRequest<TResponse, TBody = unknown>(
+  path: string,
+  options: Pick<ApiRequestOptions<TBody>, 'method' | 'query' | 'body' | 'signal' | 'idempotencyKey'> = {},
+): Promise<TResponse> {
+  const method = options.method ?? 'GET'
+  const requestId = makeRequestId()
+  const idempotencyKey = method === 'GET' ? undefined : (options.idempotencyKey ?? makeRequestId())
+  const headers = new Headers({
+    Accept: 'application/json',
+    'Cache-Control': 'no-store',
+    Pragma: 'no-cache',
+    'X-Request-ID': requestId,
+  })
+  if (options.body !== undefined) headers.set('Content-Type', 'application/json')
+  if (idempotencyKey) headers.set('Idempotency-Key', idempotencyKey)
+
+  let response: Response
+  try {
+    const init: RequestInit = {
+      method,
+      headers,
+      credentials: 'omit',
+      cache: 'no-store',
+    }
+    if (options.body !== undefined) init.body = JSON.stringify(options.body)
+    if (options.signal) init.signal = options.signal
+    response = await fetch(buildUrl(path, options.query), init)
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    throw new ApiError(
+      navigator.onLine
+        ? 'The ordering service could not be reached. Please try again.'
+        : 'You are offline. Reconnect before placing an order.',
+      0,
+    )
+  }
+
+  const responseRequestId = response.headers.get('x-request-id') ?? requestId
+  const payload = await parsePayload(response)
+  if (!response.ok) {
+    const problem = payload && typeof payload === 'object' ? payload as ApiProblem : undefined
+    throw new ApiError(
+      problemMessage(problem, `Request failed with status ${response.status}.`),
+      response.status,
+      problem,
+      responseRequestId,
+    )
+  }
+  return payload as TResponse
+}
+
 export const api = {
   get: <T>(path: string, query?: ApiQuery, signal?: AbortSignal) =>
     apiRequest<T>(path, { query, signal }),
@@ -189,6 +240,13 @@ export const api = {
     apiRequest<T, B>(path, { method: 'PATCH', body, idempotencyKey }),
   delete: <T, B = unknown>(path: string, body?: B, idempotencyKey?: string) =>
     apiRequest<T, B>(path, { method: 'DELETE', body, idempotencyKey }),
+}
+
+export const publicApi = {
+  get: <T>(path: string, query?: ApiQuery, signal?: AbortSignal) =>
+    publicApiRequest<T>(path, { query, signal }),
+  post: <T, B = unknown>(path: string, body: B, idempotencyKey?: string) =>
+    publicApiRequest<T, B>(path, { method: 'POST', body, idempotencyKey }),
 }
 
 export function pageItems<T>(payload: Page<T> | T[] | { items?: T[] } | null | undefined): T[] {

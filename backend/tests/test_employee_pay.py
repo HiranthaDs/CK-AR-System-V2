@@ -5,7 +5,13 @@ from datetime import date
 import pytest
 from pydantic import ValidationError
 
-from app.models import EmployeeUpsert, OvertimeUpsert, PayrollPaymentPost, PayrollPost
+from app.models import (
+    DailyTargetUpsert,
+    EmployeeUpsert,
+    OvertimeUpsert,
+    PayrollPaymentPost,
+    PayrollPost,
+)
 
 
 def employee_payload(**overrides: object) -> dict[str, object]:
@@ -17,6 +23,7 @@ def employee_payload(**overrides: object) -> dict[str, object]:
         "monthly_rate": "85000.00",
         "daily_rate": 0,
         "ot_rate": "750.00",
+        "monthly_incentive": "17000.00",
         "standard_hours_per_day": 8,
         "standard_days_per_month": 22,
         "employee_epf_rate": 8,
@@ -106,6 +113,7 @@ def test_overtime_requires_valid_hours_and_rate() -> None:
             "work_date": "2026-09-22",
             "hours": "2.5",
             "rate": "750.00",
+            "target_percent": "100.00",
         }
     )
     assert overtime.hours == 2.5
@@ -118,6 +126,28 @@ def test_overtime_requires_valid_hours_and_rate() -> None:
                 "work_date": "2026-09-22",
                 "hours": 25,
                 "rate": 750,
+                "target_percent": 100,
+            }
+        )
+
+
+def test_daily_and_overtime_target_percentages_are_manual_and_bounded() -> None:
+    daily_target = DailyTargetUpsert.model_validate(
+        {
+            "employee_id": "00000000-0000-0000-0000-000000000001",
+            "work_date": "2026-09-22",
+            "target_percent": "87.50",
+        }
+    )
+    assert daily_target.target_percent == 87.5
+
+    with pytest.raises(ValidationError, match="less than or equal to 100"):
+        OvertimeUpsert.model_validate(
+            {
+                "employee_id": "00000000-0000-0000-0000-000000000001",
+                "work_date": "2026-09-22",
+                "hours": 1,
+                "target_percent": 101,
             }
         )
 

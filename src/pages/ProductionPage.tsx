@@ -23,11 +23,12 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { z } from 'zod'
 import { api } from '../lib/api'
 import { localIsoDate, money, numberValue, quantity, recordValue, shortDate, titleCase } from '../lib/format'
-import type { Conversion, ConversionType, Employee, InventoryPosition, MutationReceipt, Page, PieceworkRate, ProductionRun, ProductionSummary, RawMaterialPurchase } from '../types/api'
+import type { Conversion, ConversionType, Employee, InventoryItem, InventoryPosition, MutationReceipt, Page, PieceworkRate, ProductionRun, ProductionSummary, RawMaterialPurchase } from '../types/api'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { RemoteSelect } from '../components/RemoteSelect'
 import { ConversionTypeDialog, PieceworkRateDialog } from '../components/ConversionSetupDialogs'
+import { ProductCards, ProductDialog, type ProductValues } from '../components/ProductSetup'
 import {
   Badge,
   Button,
@@ -49,7 +50,7 @@ import {
   Textarea,
 } from '../components/UI'
 
-type ProductionTab = 'dashboard' | 'purchases' | 'conversions' | 'rates' | 'runs'
+type ProductionTab = 'dashboard' | 'products' | 'purchases' | 'conversions' | 'rates' | 'runs'
 type ReverseTarget = { type: 'rm-purchases' | 'conversions' | 'piecework-rates' | 'production'; id: string; reference: string }
 
 const purchaseSchema = z.object({
@@ -102,6 +103,7 @@ const productionSchema = z.object({
   chip_item_id: z.string().uuid('Select converted chip stock.'),
   finished_item_id: z.string().optional(),
   finished_item_name: z.string().min(2, 'Finished product name is required.'),
+  product_type: z.string().min(1, 'Product type is required.').max(100),
   selling_price: z.coerce.number().positive('Selling price must be greater than zero.'),
   input_kg: z.coerce.number().positive(),
   output_quantity: z.coerce.number().positive(),
@@ -127,9 +129,13 @@ export function ProductionPage() {
   const [conversionTypeOpen, setConversionTypeOpen] = useState(false)
   const [rateOpen, setRateOpen] = useState(false)
   const [runOpen, setRunOpen] = useState(false)
+  const [productOpen, setProductOpen] = useState(false)
   const [editingPurchase, setEditingPurchase] = useState<RawMaterialPurchase | null>(null)
   const [editingRate, setEditingRate] = useState<PieceworkRate | null>(null)
   const [editingRun, setEditingRun] = useState<ProductionRun | null>(null)
+  const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
+  const [productionProduct, setProductionProduct] = useState<InventoryItem | null>(null)
+  const [reversingProduct, setReversingProduct] = useState<InventoryItem | null>(null)
   const [reverseTarget, setReverseTarget] = useState<ReverseTarget | null>(null)
 
   const summaryQuery = useQuery({
@@ -157,6 +163,11 @@ export function ProductionPage() {
     queryFn: ({ signal }) => api.list<ProductionRun>('/production', { page, page_size: pageSize, q: search }, signal),
     enabled: tab === 'runs',
   })
+  const productsQuery = useQuery({
+    queryKey: ['products', page, search],
+    queryFn: ({ signal }) => api.list<InventoryItem>('/products', { page, page_size: pageSize, q: search, descending: false }, signal),
+    enabled: tab === 'products',
+  })
 
   const invalidate = async () => {
     await Promise.all([
@@ -164,6 +175,7 @@ export function ProductionPage() {
       queryClient.invalidateQueries({ queryKey: ['conversions'] }),
       queryClient.invalidateQueries({ queryKey: ['piecework-rates'] }),
       queryClient.invalidateQueries({ queryKey: ['production'] }),
+      queryClient.invalidateQueries({ queryKey: ['products'] }),
       queryClient.invalidateQueries({ queryKey: ['inventory'] }),
       queryClient.invalidateQueries({ queryKey: ['lookup'] }),
       queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
@@ -190,6 +202,18 @@ export function ProductionPage() {
     onSuccess: async () => { setRunOpen(false); setEditingRun(null); await invalidate(); toast.success('Production posted', 'Chip consumption and finished-goods stock are updated.') },
     onError: (error) => toast.error('Production not saved', error.message),
   })
+  const productMutation = useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: ProductValues }) => id
+      ? api.patch<MutationReceipt, ProductValues>(`/products/${id}`, body)
+      : api.post<MutationReceipt, ProductValues>('/products', body),
+    onSuccess: async () => { setProductOpen(false); setEditingProduct(null); await invalidate(); toast.success('Product saved', 'The product is ready for production, quotations, and invoices.') },
+    onError: (error) => toast.error('Product not saved', error.message),
+  })
+  const reverseProductMutation = useMutation({
+    mutationFn: (product: InventoryItem) => api.delete<MutationReceipt>(`/products/${product.id}`),
+    onSuccess: async () => { setReversingProduct(null); await invalidate(); toast.success('Product reversed', 'It is hidden from new production, sales, and customer orders while history remains intact.') },
+    onError: (error) => toast.error('Product could not be reversed', error instanceof Error ? error.message : 'Try again.'),
+  })
   const reverseMutation = useMutation({
     mutationFn: (target: ReverseTarget) => api.delete<MutationReceipt, { reason: string }>(`/${target.type}/${target.id}`, { reason: `Reversed from ${titleCase(target.type)} workspace` }),
     onSuccess: async () => { setReverseTarget(null); await invalidate(); toast.success('Record reversed', 'The original remains visible in the audit trail.') },
@@ -198,13 +222,14 @@ export function ProductionPage() {
 
   const openPurchase = (record?: RawMaterialPurchase) => { setEditingPurchase(record ?? null); setPurchaseOpen(true) }
   const openRate = (record?: PieceworkRate) => { setEditingRate(record ?? null); setRateOpen(true) }
-  const openRun = (record?: ProductionRun) => { setEditingRun(record ?? null); setRunOpen(true) }
+  const openRun = (record?: ProductionRun, product?: InventoryItem) => { setEditingRun(record ?? null); setProductionProduct(product ?? null); setRunOpen(true) }
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Manufacturing operations" title="Production & conversion" description="Control material procurement, conversion labor, piecework rates, and finished-goods production." actions={<Button icon={Plus} onClick={() => openRun()}>Record production</Button>} />
+      <PageHeader eyebrow="Manufacturing operations" title="Production & conversion" description="Control the finished-product master, material procurement, conversion labor, piecework rates, and production." actions={<div className="row-actions"><Button variant="secondary" icon={Boxes} onClick={() => { setEditingProduct(null); setProductOpen(true) }}>New product</Button><Button icon={Plus} onClick={() => openRun()}>Record production</Button></div>} />
       <Tabs value={tab} onChange={(value) => { setTab(value); setPage(1); setSearch('') }} ariaLabel="Production sections" items={[
         { value: 'dashboard', label: 'Dashboard', icon: Gauge },
+        { value: 'products', label: 'Products', icon: Boxes },
         { value: 'purchases', label: 'Bulk RM', icon: PackagePlus },
         { value: 'conversions', label: 'Conversions', icon: Recycle },
         { value: 'rates', label: 'Rate master', icon: Settings2 },
@@ -212,6 +237,7 @@ export function ProductionPage() {
       ]} />
 
       {tab === 'dashboard' ? summaryQuery.isLoading ? <LoadingState label="Calculating manufacturing position…" /> : summaryQuery.isError ? <ErrorState error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summaryQuery.data ? <ProductionDashboard summary={summaryQuery.data} /> : null : null}
+      {tab === 'products' ? <ProductList query={productsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => { setEditingProduct(null); setProductOpen(true) }} onEdit={(product) => { setEditingProduct(product); setProductOpen(true) }} onReverse={setReversingProduct} onProduce={(product) => openRun(undefined, product)} /> : null}
       {tab === 'purchases' ? <PurchaseList query={purchasesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openPurchase()} onEdit={openPurchase} onReverse={(record) => setReverseTarget({ type: 'rm-purchases', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
       {tab === 'conversions' ? <ConversionList query={conversionsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => setConversionOpen(true)} onAddType={() => setConversionTypeOpen(true)} onAddRate={() => openRate()} onReverse={(record) => setReverseTarget({ type: 'conversions', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
       {tab === 'rates' ? <RateList query={ratesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openRate()} onEdit={openRate} onReverse={(record) => setReverseTarget({ type: 'piecework-rates', id: record.id, reference: record.work_type ?? record.id })} /> : null}
@@ -221,7 +247,9 @@ export function ProductionPage() {
       <ConversionDialog open={conversionOpen} mutation={conversionMutation} onClose={() => setConversionOpen(false)} />
       <ConversionTypeDialog open={conversionTypeOpen} record={null} onClose={() => setConversionTypeOpen(false)} />
       <PieceworkRateDialog open={rateOpen} record={editingRate} onClose={() => { setRateOpen(false); setEditingRate(null) }} />
-      <ProductionDialog open={runOpen} record={editingRun} mutation={runMutation} onClose={() => { setRunOpen(false); setEditingRun(null) }} />
+      <ProductDialog open={productOpen} record={editingProduct} mutation={productMutation} onClose={() => { setProductOpen(false); setEditingProduct(null) }} />
+      <ProductionDialog open={runOpen} record={editingRun} initialProduct={productionProduct} mutation={runMutation} onClose={() => { setRunOpen(false); setEditingRun(null); setProductionProduct(null) }} />
+      <ConfirmDialog open={Boolean(reversingProduct)} title="Reverse this product?" message={`${reversingProduct?.name ?? 'This product'} will be removed from the customer catalogue and new transactions. Existing orders, quotations, invoices, production, and stock history remain unchanged.`} destructive confirmLabel="Reverse product" busy={reverseProductMutation.isPending} onCancel={() => setReversingProduct(null)} onConfirm={() => { if (reversingProduct) reverseProductMutation.mutate(reversingProduct) }} />
       <ConfirmDialog open={Boolean(reverseTarget)} title="Reverse this posted record?" message={`${reverseTarget?.reference ?? 'This record'} will remain in the audit trail. Inventory and financial effects will be offset atomically.`} destructive confirmLabel="Post reversal" busy={reverseMutation.isPending} onCancel={() => setReverseTarget(null)} onConfirm={() => { if (reverseTarget) reverseMutation.mutate(reverseTarget) }} />
     </div>
   )
@@ -246,6 +274,28 @@ function ProductionDashboard({ summary }: { summary: ProductionSummary }) {
   </div>
 }
 
+function ProductList({ query, search, setSearch, page, setPage, onAdd, onEdit, onReverse, onProduce }: {
+  query: ReturnType<typeof useQuery<Page<InventoryItem>>>
+  search: string
+  setSearch: (value: string) => void
+  page: number
+  setPage: (value: number) => void
+  onAdd: () => void
+  onEdit: (product: InventoryItem) => void
+  onReverse: (product: InventoryItem) => void
+  onProduce: (product: InventoryItem) => void
+}) {
+  const rows = query.data?.items ?? []
+  return <Card>
+    <SectionTitle title="Product catalogue" description="Add images, categories, customer descriptions, and selling prices once, then reuse them throughout production, sales, and online orders." actions={<Button icon={Plus} onClick={onAdd}>Add product</Button>} />
+    <div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Search product name" /></div>
+    {query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <>
+      <ProductCards products={rows} onEdit={onEdit} onReverse={onReverse} onProduce={onProduce} />
+      <Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} />
+    </> : <EmptyState message="No finished products have been saved yet." action={<Button icon={Plus} onClick={onAdd}>Create first product</Button>} />}
+  </Card>
+}
+
 function PurchaseList({ query, search, setSearch, page, setPage, onAdd, onEdit, onReverse }: { query: ReturnType<typeof useQuery<Page<RawMaterialPurchase>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onEdit: (record: RawMaterialPurchase) => void; onReverse: (record: RawMaterialPurchase) => void }) {
   const rows = query.data?.items ?? []
   return <Card><SectionTitle title="Raw-material procurement" description="Posted purchases add bulk stock and create the configured cash, bank, or payable accounting effect." actions={<Button icon={Plus} onClick={onAdd}>New purchase</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Search reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Supplier</th><th>Material</th><th className="numeric">Quantity</th><th className="numeric">Cost</th><th>Method</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.purchase_date ?? row.date)}</span></td><td>{row.supplier_name ?? '—'}<span className="table-subtext">{row.supplier_phone ?? ''}</span></td><td><strong>{row.material_name ?? row.inventory_items?.name ?? recordValue<string>(row, 'item_name') ?? 'Material'}</strong></td><td className="numeric">{quantity(row.quantity_kg ?? row.qty)} kg</td><td className="numeric">{money(row.total_cost)}</td><td><Badge>{titleCase(row.payment_method)}</Badge></td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge></td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No material purchases match the current search." action={<Button icon={Plus} onClick={onAdd}>Post first purchase</Button>} />}</Card>
@@ -263,7 +313,7 @@ function RateList({ query, search, setSearch, page, setPage, onAdd, onEdit, onRe
 
 function RunList({ query, search, setSearch, page, setPage, onAdd, onEdit, onReverse }: { query: ReturnType<typeof useQuery<Page<ProductionRun>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onEdit: (record: ProductionRun) => void; onReverse: (record: ProductionRun) => void }) {
   const rows = query.data?.items ?? []
-  return <Card><SectionTitle title="Master production log" description="Posted chip consumption and finished-goods output with immutable costing snapshots." actions={<Button icon={Plus} onClick={onAdd}>Record production</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Product, machine, operator, or reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Machine / operator</th><th>Output</th><th className="numeric">Quantity</th><th>Chip input</th><th className="numeric">Total cost</th><th className="numeric">Unit cost</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => { const output = numberValue(row.output_quantity ?? row.quantity ?? row.qty); const total = numberValue(row.total_cost); return <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.production_date ?? row.date)}</span></td><td><strong>{row.machine ?? 'No machine'}</strong><span className="table-subtext">{row.operator_name ?? recordValue<string>(row, 'employee_name') ?? '—'} · {row.shift ?? 'No shift'}</span></td><td><strong>{row.finished_item_name ?? row.item_name ?? recordValue<string>(row, 'output_item_name') ?? 'Finished item'}</strong></td><td className="numeric">{quantity(output)}</td><td>{row.chip_name ?? row.raw_material_name ?? recordValue<string>(row, 'input_item_name') ?? 'Chip'}<span className="table-subtext">{quantity(row.input_kg ?? row.raw_material_quantity_kg)} kg</span></td><td className="numeric">{money(total)}</td><td className="numeric">{money(row.unit_cost ?? (output ? total / output : 0))}</td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge></td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr> })}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No production runs match the current search." />}</Card>
+  return <Card><SectionTitle title="Master production log" description="Posted chip consumption and finished-goods output with immutable costing snapshots." actions={<Button icon={Plus} onClick={onAdd}>Record production</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Product, machine, operator, or reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Machine / operator</th><th>Output</th><th className="numeric">Quantity</th><th>Chip input</th><th className="numeric">Total cost</th><th className="numeric">Unit cost</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => { const output = numberValue(row.output_quantity ?? row.quantity ?? row.qty); const total = numberValue(row.total_cost); return <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.production_date ?? row.date)}</span></td><td><strong>{row.machine ?? 'No machine'}</strong><span className="table-subtext">{row.operator_name ?? recordValue<string>(row, 'employee_name') ?? '—'} · {row.shift ?? 'No shift'}</span></td><td><strong>{row.finished_item_name ?? row.finished_item?.name ?? row.item_name ?? recordValue<string>(row, 'output_item_name') ?? 'Finished item'}</strong><span className="table-subtext">{row.finished_item?.product_type || 'No type'} · {money(row.finished_item?.selling_price)} selling</span></td><td className="numeric">{quantity(output)}</td><td>{row.chip_name ?? row.raw_material_name ?? recordValue<string>(row, 'input_item_name') ?? 'Chip'}<span className="table-subtext">{quantity(row.input_kg ?? row.raw_material_quantity_kg)} kg</span></td><td className="numeric">{money(total)}</td><td className="numeric">{money(row.unit_cost ?? (output ? total / output : 0))}</td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge></td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr> })}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No production runs match the current search." />}</Card>
 }
 
 function PurchaseDialog({ open, record, mutation, onClose }: { open: boolean; record: RawMaterialPurchase | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string; body: Record<string, unknown> }>>; onClose: () => void }) {
@@ -423,33 +473,36 @@ function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation
   )
 }
 
-function ProductionDialog({ open, record, mutation, onClose }: { open: boolean; record: ProductionRun | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string; body: Record<string, unknown> }>>; onClose: () => void }) {
+function ProductionDialog({ open, record, initialProduct, mutation, onClose }: { open: boolean; record: ProductionRun | null; initialProduct: InventoryItem | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string; body: Record<string, unknown> }>>; onClose: () => void }) {
   const [selectedChip, setSelectedChip] = useState<InventoryPosition | undefined>()
-  const form = useForm<ProductionValues>({ resolver: zodResolver(productionSchema), values: { id: record?.id, reference_no: record?.reference_no ?? '', production_date: record?.production_date ?? record?.date ?? localIsoDate(), shift: record?.shift ?? '', machine: record?.machine ?? '', operator_employee_id: record?.operator_employee_id ?? '', chip_item_id: record?.chip_item_id ?? '', finished_item_id: record?.finished_item_id ?? '', finished_item_name: record?.finished_item_name ?? record?.finished_item?.name ?? record?.item_name ?? recordValue<string>(record ?? {}, 'output_item_name') ?? '', selling_price: numberValue(record?.finished_item?.selling_price), input_kg: numberValue(record?.input_kg ?? record?.raw_material_quantity_kg), output_quantity: numberValue(record?.output_quantity ?? record?.quantity ?? record?.qty), working_hours: numberValue(record?.working_hours), overhead_cost: numberValue(record?.overhead_cost), notes: record?.notes ?? '' } })
+  const [selectedFinished, setSelectedFinished] = useState<InventoryPosition | undefined>()
+  const form = useForm<ProductionValues>({ resolver: zodResolver(productionSchema), values: { id: record?.id, reference_no: record?.reference_no ?? '', production_date: record?.production_date ?? record?.date ?? localIsoDate(), shift: record?.shift ?? '', machine: record?.machine ?? '', operator_employee_id: record?.operator_employee_id ?? '', chip_item_id: record?.chip_item_id ?? '', finished_item_id: record?.finished_item_id ?? initialProduct?.id ?? '', finished_item_name: record?.finished_item_name ?? record?.finished_item?.name ?? initialProduct?.name ?? record?.item_name ?? recordValue<string>(record ?? {}, 'output_item_name') ?? '', product_type: record?.finished_item?.product_type ?? initialProduct?.product_type ?? '', selling_price: numberValue(record?.finished_item?.selling_price ?? initialProduct?.selling_price), input_kg: numberValue(record?.input_kg ?? record?.raw_material_quantity_kg), output_quantity: numberValue(record?.output_quantity ?? record?.quantity ?? record?.qty), working_hours: numberValue(record?.working_hours), overhead_cost: numberValue(record?.overhead_cost), notes: record?.notes ?? '' } })
   const watched = form.watch()
   const reusingFinishedProduct = Boolean(watched.finished_item_id)
   const estimatedMaterial = selectedChip
     ? numberValue(watched.input_kg) * numberValue(selectedChip.average_unit_cost)
     : numberValue(record?.material_cost)
   const estimatedTotal = estimatedMaterial + numberValue(watched.overhead_cost)
-  const submit = form.handleSubmit((values) => mutation.mutate({ ...(values.id ? { id: values.id } : {}), body: { ...(values.reference_no ? { reference_no: values.reference_no } : {}), production_date: values.production_date, shift: values.shift || null, machine: values.machine || null, operator_employee_id: values.operator_employee_id, chip_item_id: values.chip_item_id, ...(values.finished_item_id ? { finished_item_id: values.finished_item_id } : {}), finished_item_name: values.finished_item_name, selling_price: values.selling_price, input_kg: values.input_kg, output_quantity: values.output_quantity, working_hours: values.working_hours, overhead_cost: values.overhead_cost, notes: values.notes || null } }))
+  const submit = form.handleSubmit((values) => mutation.mutate({ ...(values.id ? { id: values.id } : {}), body: { ...(values.reference_no ? { reference_no: values.reference_no } : {}), production_date: values.production_date, shift: values.shift || null, machine: values.machine || null, operator_employee_id: values.operator_employee_id, chip_item_id: values.chip_item_id, ...(values.finished_item_id ? { finished_item_id: values.finished_item_id } : {}), finished_item_name: values.finished_item_name, product_type: values.product_type, selling_price: values.selling_price, input_kg: values.input_kg, output_quantity: values.output_quantity, working_hours: values.working_hours, overhead_cost: values.overhead_cost, notes: values.notes || null } }))
   return (
     <Dialog open={open} onClose={onClose} title={record ? 'Correct production run' : 'Record production run'} description="Existing effects are released and reposted atomically when correcting a run." size="large" closeDisabled={mutation.isPending} footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button icon={Factory} loading={mutation.isPending} onClick={() => void submit()}>Save production</Button></>}>
       <form className="form-grid form-grid--three" onSubmit={(event) => void submit(event)}>
         <Field label="Production date" required><Input type="date" {...form.register('production_date')} /></Field>
-        <Field label="Shift"><Input {...form.register('shift')} placeholder="Day / Night" /></Field>
+        <Field label="Shift"><Select {...form.register('shift')}><option value="">Select shift</option><option value="Day">Day shift</option><option value="Night">Night shift</option></Select></Field>
         <Field label="Machine"><Input {...form.register('machine')} /></Field>
         <RemoteSelect<Employee> label="Operator" endpoint="/employees" queryKey="production-operator" query={{ status: 'active' }} value={form.watch('operator_employee_id')} onChange={(value) => form.setValue('operator_employee_id', value, { shouldValidate: true })} optionValue={(employee) => employee.id} optionLabel={(employee) => `${employee.name} · ${employee.employee_no ?? 'No ID'}`} required error={form.formState.errors.operator_employee_id?.message} selectedLabel={record?.operator?.name} />
         <Field label="Working hours"><Input type="number" min="0" step="0.25" {...form.register('working_hours')} /></Field>
         <OverheadCostField inputId="production-overhead-cost"><Input id="production-overhead-cost" type="number" min="0" step="0.01" {...form.register('overhead_cost')} /></OverheadCostField>
         <RemoteSelect<InventoryPosition> label="Converted chip" endpoint="/inventory/chips" queryKey="production-chip" value={form.watch('chip_item_id')} onChange={(value) => form.setValue('chip_item_id', value, { shouldValidate: true })} onSelectItem={(item) => { setSelectedChip(item); if (item) form.setValue('input_kg', numberValue(item.quantity_on_hand), { shouldValidate: true }) }} optionValue={(item) => item.item_id} optionLabel={(item) => `${item.item_name} · ${quantity(item.quantity_on_hand)} kg available`} required error={form.formState.errors.chip_item_id?.message} selectedLabel={record?.chip_item?.name} />
         <Field label="Chip input (kg)" required error={form.formState.errors.input_kg?.message} hint={selectedChip ? `${quantity(selectedChip.quantity_on_hand)} kg currently available; adjust this run quantity if needed.` : undefined}><Input type="number" min="0.000001" max={selectedChip ? numberValue(selectedChip.quantity_on_hand) : undefined} step="0.001" {...form.register('input_kg')} /></Field>
-        <RemoteSelect<InventoryPosition> label="Existing final product (optional)" endpoint="/inventory/finished" queryKey="production-finished-product" value={form.watch('finished_item_id') ?? ''} onChange={(value) => form.setValue('finished_item_id', value, { shouldValidate: true })} onSelectItem={(item) => { if (!item) return; form.setValue('finished_item_name', item.item_name, { shouldValidate: true }); const savedPrice = numberValue(item.selling_price); form.setValue('selling_price', savedPrice > 0 ? savedPrice : Math.round(numberValue(item.average_unit_cost) * 1.5 * 100) / 100, { shouldValidate: true }) }} optionValue={(item) => item.item_id} optionLabel={(item) => `${item.item_name} · ${item.sku || 'No SKU'} · ${money(item.selling_price)} selling price`} selectedLabel={record?.finished_item?.name} placeholder="Select to reuse, or enter a new product below" />
+        <RemoteSelect<InventoryPosition> label="Existing final product (optional)" endpoint="/inventory/finished" queryKey="production-finished-product" value={form.watch('finished_item_id') ?? ''} onChange={(value) => form.setValue('finished_item_id', value, { shouldValidate: true })} onSelectItem={(item) => { setSelectedFinished(item); if (!item) return; form.setValue('finished_item_name', item.item_name, { shouldValidate: true }); form.setValue('product_type', item.product_type ?? '', { shouldValidate: true }); const savedPrice = numberValue(item.selling_price); form.setValue('selling_price', savedPrice > 0 ? savedPrice : Math.round(numberValue(item.average_unit_cost) * 1.5 * 100) / 100, { shouldValidate: true }) }} optionValue={(item) => item.item_id} optionLabel={(item) => `${item.item_name} · ${item.product_type || 'No type'} · ${money(item.selling_price)} · ${quantity(item.quantity_on_hand)} available`} selectedLabel={record?.finished_item?.name ?? initialProduct?.name} placeholder="Select to reuse, or enter a new product below" />
         <Field label="Final product name" required hint={reusingFinishedProduct ? 'The selected catalogue product will be reused; no duplicate is created.' : 'For example: 4-inch black photo frame arm.'} error={form.formState.errors.finished_item_name?.message}><Input {...form.register('finished_item_name')} readOnly={reusingFinishedProduct} /></Field>
+        <Field label="Product type" required hint="Saved with the reusable product catalogue." error={form.formState.errors.product_type?.message}><Input {...form.register('product_type')} placeholder="Example: Photo frame" /></Field>
         <Field label="Selling price" required hint="Saved on the product and auto-filled on invoices; offers and manual prices remain allowed." error={form.formState.errors.selling_price?.message}><Input type="number" min="0.01" step="0.01" {...form.register('selling_price')} /></Field>
         <Field label="Output quantity" required error={form.formState.errors.output_quantity?.message}><Input type="number" min="0.000001" step="0.001" {...form.register('output_quantity')} /></Field>
         <div className="calculated-field"><span>Estimated total cost</span><strong>{money(estimatedTotal)}</strong><small>Final weighted cost is server-calculated</small></div>
         <div className="calculated-field"><span>Estimated unit cost</span><strong>{money(numberValue(watched.output_quantity) ? estimatedTotal / numberValue(watched.output_quantity) : 0)}</strong><small>Material + overhead</small></div>
+        {selectedFinished ? <div className="calculated-field"><span>Selected catalogue stock</span><strong>{quantity(selectedFinished.quantity_on_hand)} units</strong><small>{selectedFinished.product_type || 'No type'} · {selectedFinished.sku || 'No SKU'}</small></div> : null}
         <Field label="Notes" className="field--span-3"><Textarea rows={2} {...form.register('notes')} /></Field>
       </form>
     </Dialog>
