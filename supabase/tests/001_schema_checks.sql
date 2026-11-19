@@ -99,9 +99,10 @@ begin
         'company_inventory_balances', 'fiscal_periods',
         'inventory_ownership_transfers',
         'employees', 'employee_compensation_history', 'conversion_types',
-        'piecework_rates',
+        'piecework_rates', 'bulk_rm_rates',
         'inventory_items', 'accounts',
-        'journal_entries', 'journal_lines', 'raw_material_purchases',
+        'journal_entries', 'journal_lines', 'raw_material_purchase_consignments',
+        'raw_material_purchases',
         'conversions', 'conversion_workers', 'daily_work',
         'daily_work_piecework', 'daily_work_conversion_links', 'overtime_entries',
         'payroll_overtime_claims', 'production_runs',
@@ -244,6 +245,19 @@ begin
       and not a.attisdropped
   ) then
     raise exception 'Inventory catalogue selling price is missing';
+  end if;
+  if not exists (
+    select 1 from pg_catalog.pg_trigger t
+    where t.tgrelid = 'public.bulk_rm_rates'::regclass
+      and t.tgname = 'bulk_rm_rates_rpc_guard'
+      and not t.tgisinternal
+  ) or not exists (
+    select 1 from pg_catalog.pg_trigger t
+    where t.tgrelid = 'public.raw_material_purchase_consignments'::regclass
+      and t.tgname = 'raw_material_purchase_consignments_rpc_guard'
+      and not t.tgisinternal
+  ) then
+    raise exception 'Bulk RM write guards are incomplete';
   end if;
   if not exists (
     select 1

@@ -14,7 +14,7 @@
    - **Read only** — view access without posting.
 6. Select **Group super administrator** only for an owner who must administer both systems and create other super administrators.
 
-The menu hides unassigned workspaces, but security does not depend on the menu: FastAPI permissions and Postgres RLS enforce the same access.
+The menu hides unassigned workspaces, but security does not depend on the menu: Node API permissions and Postgres RLS enforce the same access.
 
 ### Account status and removal
 

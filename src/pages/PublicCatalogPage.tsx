@@ -4,7 +4,7 @@ import { CheckCircle2, ChevronRight, Minus, PackageOpen, Plus, ShoppingBag, Spar
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
-import { z } from 'zod'
+import { z } from 'zod/v3'
 import { Button, EmptyState, ErrorState, Field, Input, LoadingState, Textarea } from '../components/UI'
 import { makeRequestId, publicApi } from '../lib/api'
 import { money, numberValue } from '../lib/format'

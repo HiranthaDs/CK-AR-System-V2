@@ -10,6 +10,7 @@ import {
   CircleHelp,
   Factory,
   Gauge,
+  FileText,
   PackagePlus,
   Pencil,
   Plus,
@@ -18,17 +19,19 @@ import {
   Scale,
   Settings2,
   Trash2,
+  Wrench,
 } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { z } from 'zod'
+import { z } from 'zod/v3'
 import { api } from '../lib/api'
 import { localIsoDate, money, numberValue, quantity, recordValue, shortDate, titleCase } from '../lib/format'
-import type { Conversion, ConversionType, Employee, InventoryItem, InventoryPosition, MutationReceipt, Page, PieceworkRate, ProductionRun, ProductionSummary, RawMaterialPurchase } from '../types/api'
+import type { BulkRmRate, Conversion, ConversionType, Employee, InventoryItem, InventoryPosition, MutationReceipt, Page, PieceworkRate, ProductionRun, ProductionSummary, RawMaterialPurchase } from '../types/api'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { RemoteSelect } from '../components/RemoteSelect'
 import { ConversionTypeDialog, PieceworkRateDialog } from '../components/ConversionSetupDialogs'
 import { ProductCards, ProductDialog, type ProductValues } from '../components/ProductSetup'
+import { BulkRmInvoiceDialog, BulkRmPurchaseDialog, BulkRmRateDialog, BulkRmRateListEmpty, type BulkRmPurchaseMutationInput } from '../components/BulkRmSetup'
 import {
   Badge,
   Button,
@@ -50,21 +53,8 @@ import {
   Textarea,
 } from '../components/UI'
 
-type ProductionTab = 'dashboard' | 'products' | 'purchases' | 'conversions' | 'rates' | 'runs'
+type ProductionTab = 'dashboard' | 'products' | 'purchases' | 'bulk-rates' | 'conversions' | 'rates' | 'runs'
 type ReverseTarget = { type: 'rm-purchases' | 'conversions' | 'piecework-rates' | 'production'; id: string; reference: string }
-
-const purchaseSchema = z.object({
-  id: z.string().optional(),
-  reference_no: z.string().optional(),
-  purchase_date: z.string().min(1),
-  material: z.string().min(2, 'Material is required.'),
-  supplier_name: z.string().max(160).optional(),
-  supplier_phone: z.string().max(40).optional(),
-  quantity_kg: z.coerce.number().positive('Quantity must be greater than zero.'),
-  total_cost: z.coerce.number().positive('Cost must be greater than zero.'),
-  payment_method: z.enum(['cash', 'bank_transfer', 'cheque', 'credit']),
-  notes: z.string().max(2000).optional(),
-})
 
 const workerSchema = z.object({
   employee_id: z.string().uuid('Select an employee.'),
@@ -112,7 +102,6 @@ const productionSchema = z.object({
   notes: z.string().max(2000).optional(),
 })
 
-type PurchaseValues = z.infer<typeof purchaseSchema>
 type ConversionValues = z.infer<typeof conversionSchema>
 type ProductionValues = z.infer<typeof productionSchema>
 
@@ -125,12 +114,16 @@ export function ProductionPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [purchaseOpen, setPurchaseOpen] = useState(false)
+  const [bulkRateOpen, setBulkRateOpen] = useState(false)
+  const [invoicePurchaseId, setInvoicePurchaseId] = useState<string | null>(null)
   const [conversionOpen, setConversionOpen] = useState(false)
   const [conversionTypeOpen, setConversionTypeOpen] = useState(false)
   const [rateOpen, setRateOpen] = useState(false)
   const [runOpen, setRunOpen] = useState(false)
   const [productOpen, setProductOpen] = useState(false)
   const [editingPurchase, setEditingPurchase] = useState<RawMaterialPurchase | null>(null)
+  const [editingBulkRate, setEditingBulkRate] = useState<BulkRmRate | null>(null)
+  const [deactivatingBulkRate, setDeactivatingBulkRate] = useState<BulkRmRate | null>(null)
   const [editingRate, setEditingRate] = useState<PieceworkRate | null>(null)
   const [editingRun, setEditingRun] = useState<ProductionRun | null>(null)
   const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
@@ -153,6 +146,11 @@ export function ProductionPage() {
     queryFn: ({ signal }) => api.list<RawMaterialPurchase>('/rm-purchases', { page, page_size: pageSize, q: search }, signal),
     enabled: tab === 'purchases',
   })
+  const bulkRatesQuery = useQuery({
+    queryKey: ['bulk-rm-rates', page, search],
+    queryFn: ({ signal }) => api.list<BulkRmRate>('/bulk-rm-rates', { page, page_size: pageSize, q: search, descending: false }, signal),
+    enabled: tab === 'bulk-rates',
+  })
   const conversionsQuery = useQuery({
     queryKey: ['conversions', page, search],
     queryFn: ({ signal }) => api.list<Conversion>('/conversions', { page, page_size: pageSize, q: search }, signal),
@@ -172,6 +170,7 @@ export function ProductionPage() {
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['rm-purchases'] }),
+      queryClient.invalidateQueries({ queryKey: ['bulk-rm-rates'] }),
       queryClient.invalidateQueries({ queryKey: ['conversions'] }),
       queryClient.invalidateQueries({ queryKey: ['piecework-rates'] }),
       queryClient.invalidateQueries({ queryKey: ['production'] }),
@@ -184,11 +183,16 @@ export function ProductionPage() {
   }
 
   const purchaseMutation = useMutation({
-    mutationFn: ({ id, body }: { id?: string; body: Record<string, unknown> }) => id
+    mutationFn: ({ id, body }: BulkRmPurchaseMutationInput) => id
       ? api.patch<MutationReceipt, Record<string, unknown>>(`/rm-purchases/${id}`, body)
       : api.post<MutationReceipt, Record<string, unknown>>('/rm-purchases', body),
-    onSuccess: async () => { setPurchaseOpen(false); setEditingPurchase(null); await invalidate(); toast.success('Purchase posted', 'Raw-material stock and accounting are updated.') },
+    onSuccess: async (receipt) => { setPurchaseOpen(false); setEditingPurchase(null); await invalidate(); if (receipt.id) setInvoicePurchaseId(receipt.id); toast.success('Purchase posted', 'Every raw-material line, stock value, accounting entry, and supplier invoice is ready.') },
     onError: (error) => toast.error('Purchase not saved', error.message),
+  })
+  const deactivateBulkRateMutation = useMutation({
+    mutationFn: (rate: BulkRmRate) => api.delete<MutationReceipt>(`/bulk-rm-rates/${rate.id}`),
+    onSuccess: async () => { setDeactivatingBulkRate(null); await invalidate(); toast.success('Bulk RM rate deactivated', 'Historical purchase lines retain the rate snapshot.') },
+    onError: (error) => toast.error('Bulk RM rate not deactivated', error instanceof Error ? error.message : 'Try again.'),
   })
   const conversionMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.post<MutationReceipt, Record<string, unknown>>('/conversions', body),
@@ -221,6 +225,7 @@ export function ProductionPage() {
   })
 
   const openPurchase = (record?: RawMaterialPurchase) => { setEditingPurchase(record ?? null); setPurchaseOpen(true) }
+  const openBulkRate = (record?: BulkRmRate) => { setEditingBulkRate(record ?? null); setBulkRateOpen(true) }
   const openRate = (record?: PieceworkRate) => { setEditingRate(record ?? null); setRateOpen(true) }
   const openRun = (record?: ProductionRun, product?: InventoryItem) => { setEditingRun(record ?? null); setProductionProduct(product ?? null); setRunOpen(true) }
 
@@ -231,6 +236,7 @@ export function ProductionPage() {
         { value: 'dashboard', label: 'Dashboard', icon: Gauge },
         { value: 'products', label: 'Products', icon: Boxes },
         { value: 'purchases', label: 'Bulk RM', icon: PackagePlus },
+        { value: 'bulk-rates', label: 'Bulk RM rates', icon: Wrench },
         { value: 'conversions', label: 'Conversions', icon: Recycle },
         { value: 'rates', label: 'Rate master', icon: Settings2 },
         { value: 'runs', label: 'Production runs', icon: Factory },
@@ -238,18 +244,22 @@ export function ProductionPage() {
 
       {tab === 'dashboard' ? summaryQuery.isLoading ? <LoadingState label="Calculating manufacturing position…" /> : summaryQuery.isError ? <ErrorState error={summaryQuery.error} onRetry={() => void summaryQuery.refetch()} /> : summaryQuery.data ? <ProductionDashboard summary={summaryQuery.data} /> : null : null}
       {tab === 'products' ? <ProductList query={productsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => { setEditingProduct(null); setProductOpen(true) }} onEdit={(product) => { setEditingProduct(product); setProductOpen(true) }} onReverse={setReversingProduct} onProduce={(product) => openRun(undefined, product)} /> : null}
-      {tab === 'purchases' ? <PurchaseList query={purchasesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openPurchase()} onEdit={openPurchase} onReverse={(record) => setReverseTarget({ type: 'rm-purchases', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
+      {tab === 'purchases' ? <PurchaseList query={purchasesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openPurchase()} onAddRate={() => openBulkRate()} onEdit={openPurchase} onInvoice={(record) => setInvoicePurchaseId(record.id)} onReverse={(record) => setReverseTarget({ type: 'rm-purchases', id: record.id, reference: record.invoice_no ?? record.reference_no ?? record.id })} /> : null}
+      {tab === 'bulk-rates' ? <BulkRateList query={bulkRatesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openBulkRate()} onEdit={openBulkRate} onDeactivate={setDeactivatingBulkRate} /> : null}
       {tab === 'conversions' ? <ConversionList query={conversionsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => setConversionOpen(true)} onAddType={() => setConversionTypeOpen(true)} onAddRate={() => openRate()} onReverse={(record) => setReverseTarget({ type: 'conversions', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
       {tab === 'rates' ? <RateList query={ratesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openRate()} onEdit={openRate} onReverse={(record) => setReverseTarget({ type: 'piecework-rates', id: record.id, reference: record.work_type ?? record.id })} /> : null}
       {tab === 'runs' ? <RunList query={runsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openRun()} onEdit={openRun} onReverse={(record) => setReverseTarget({ type: 'production', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
 
-      <PurchaseDialog open={purchaseOpen} record={editingPurchase} mutation={purchaseMutation} onClose={() => { setPurchaseOpen(false); setEditingPurchase(null) }} />
+      <BulkRmPurchaseDialog open={purchaseOpen} record={editingPurchase} mutation={purchaseMutation} onClose={() => { setPurchaseOpen(false); setEditingPurchase(null) }} />
+      <BulkRmRateDialog open={bulkRateOpen} record={editingBulkRate} onClose={() => { setBulkRateOpen(false); setEditingBulkRate(null) }} />
+      <BulkRmInvoiceDialog purchaseId={invoicePurchaseId} onClose={() => setInvoicePurchaseId(null)} />
       <ConversionDialog open={conversionOpen} mutation={conversionMutation} onClose={() => setConversionOpen(false)} />
       <ConversionTypeDialog open={conversionTypeOpen} record={null} onClose={() => setConversionTypeOpen(false)} />
       <PieceworkRateDialog open={rateOpen} record={editingRate} onClose={() => { setRateOpen(false); setEditingRate(null) }} />
       <ProductDialog open={productOpen} record={editingProduct} mutation={productMutation} onClose={() => { setProductOpen(false); setEditingProduct(null) }} />
       <ProductionDialog open={runOpen} record={editingRun} initialProduct={productionProduct} mutation={runMutation} onClose={() => { setRunOpen(false); setEditingRun(null); setProductionProduct(null) }} />
       <ConfirmDialog open={Boolean(reversingProduct)} title="Reverse this product?" message={`${reversingProduct?.name ?? 'This product'} will be removed from the customer catalogue and new transactions. Existing orders, quotations, invoices, production, and stock history remain unchanged.`} destructive confirmLabel="Reverse product" busy={reverseProductMutation.isPending} onCancel={() => setReversingProduct(null)} onConfirm={() => { if (reversingProduct) reverseProductMutation.mutate(reversingProduct) }} />
+      <ConfirmDialog open={Boolean(deactivatingBulkRate)} title="Deactivate this Bulk RM rate?" message={`${deactivatingBulkRate?.material_type ?? 'This rate'} will no longer be available for new purchases. Existing purchase and invoice values remain unchanged.`} destructive confirmLabel="Deactivate rate" busy={deactivateBulkRateMutation.isPending} onCancel={() => setDeactivatingBulkRate(null)} onConfirm={() => { if (deactivatingBulkRate) deactivateBulkRateMutation.mutate(deactivatingBulkRate) }} />
       <ConfirmDialog open={Boolean(reverseTarget)} title="Reverse this posted record?" message={`${reverseTarget?.reference ?? 'This record'} will remain in the audit trail. Inventory and financial effects will be offset atomically.`} destructive confirmLabel="Post reversal" busy={reverseMutation.isPending} onCancel={() => setReverseTarget(null)} onConfirm={() => { if (reverseTarget) reverseMutation.mutate(reverseTarget) }} />
     </div>
   )
@@ -296,9 +306,21 @@ function ProductList({ query, search, setSearch, page, setPage, onAdd, onEdit, o
   </Card>
 }
 
-function PurchaseList({ query, search, setSearch, page, setPage, onAdd, onEdit, onReverse }: { query: ReturnType<typeof useQuery<Page<RawMaterialPurchase>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onEdit: (record: RawMaterialPurchase) => void; onReverse: (record: RawMaterialPurchase) => void }) {
+function PurchaseList({ query, search, setSearch, page, setPage, onAdd, onAddRate, onEdit, onInvoice, onReverse }: { query: ReturnType<typeof useQuery<Page<RawMaterialPurchase>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onAddRate: () => void; onEdit: (record: RawMaterialPurchase) => void; onInvoice: (record: RawMaterialPurchase) => void; onReverse: (record: RawMaterialPurchase) => void }) {
   const rows = query.data?.items ?? []
-  return <Card><SectionTitle title="Raw-material procurement" description="Posted purchases add bulk stock and create the configured cash, bank, or payable accounting effect." actions={<Button icon={Plus} onClick={onAdd}>New purchase</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Search reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Supplier</th><th>Material</th><th className="numeric">Quantity</th><th className="numeric">Cost</th><th>Method</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.purchase_date ?? row.date)}</span></td><td>{row.supplier_name ?? '—'}<span className="table-subtext">{row.supplier_phone ?? ''}</span></td><td><strong>{row.material_name ?? row.inventory_items?.name ?? recordValue<string>(row, 'item_name') ?? 'Material'}</strong></td><td className="numeric">{quantity(row.quantity_kg ?? row.qty)} kg</td><td className="numeric">{money(row.total_cost)}</td><td><Badge>{titleCase(row.payment_method)}</Badge></td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge></td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No material purchases match the current search." action={<Button icon={Plus} onClick={onAdd}>Post first purchase</Button>} />}</Card>
+  return <Card><SectionTitle title="Raw-material procurement" description="Post one lorry or bill with multiple raw materials, then generate one supplier invoice." actions={<div className="row-actions"><Button variant="secondary" icon={Wrench} onClick={onAddRate}>Add Bulk RM rate</Button><Button icon={Plus} onClick={onAdd}>New purchase</Button></div>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Search invoice number" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / invoice</th><th>Supplier / lorry</th><th>Raw materials</th><th className="numeric">Total quantity</th><th className="numeric">Grand total</th><th>Method</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => {
+    const items = [...(row.purchase_items ?? [])].sort(
+      (left, right) => (left.line_no ?? Number.MAX_SAFE_INTEGER) - (right.line_no ?? Number.MAX_SAFE_INTEGER),
+    )
+    const names = items.map((item) => item.inventory_items?.name || item.material_name || 'Raw material')
+    const totalQuantity = items.reduce((sum, item) => sum + numberValue(item.quantity_kg), 0)
+    return <tr key={row.id}><td><strong className="mono">{row.invoice_no}</strong><span className="table-subtext">{shortDate(row.purchase_date)} · {row.reference_no}</span></td><td>{row.supplier_name ?? '—'}<span className="table-subtext">{row.supplier_phone || 'No phone'} · {row.lorry_no || 'No lorry / bill no.'}</span></td><td><strong>{names.slice(0, 2).join(', ') || 'No materials'}</strong><span className="table-subtext">{items.length} material line{items.length === 1 ? '' : 's'}{names.length > 2 ? ` · +${names.length - 2} more` : ''}</span></td><td className="numeric">{quantity(totalQuantity)} kg</td><td className="numeric"><strong>{money(row.grand_total)}</strong></td><td><Badge>{titleCase(row.payment_method)}</Badge></td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status)}</Badge></td><td><div className="row-actions"><Button variant="ghost" size="small" icon={FileText} onClick={() => onInvoice(row)}>Invoice</Button><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr>
+  })}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No material consignments match the current search." action={<Button icon={Plus} onClick={onAdd}>Post first purchase</Button>} />}</Card>
+}
+
+function BulkRateList({ query, search, setSearch, page, setPage, onAdd, onEdit, onDeactivate }: { query: ReturnType<typeof useQuery<Page<BulkRmRate>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onEdit: (record: BulkRmRate) => void; onDeactivate: (record: BulkRmRate) => void }) {
+  const rates = query.data?.items ?? []
+  return <Card><SectionTitle title="Bulk RM rate master" description="Effective-dated material rates populate new lorry and consignment purchases automatically." actions={<Button icon={Plus} onClick={onAdd}>Add rate</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Search Bulk RM type" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rates.length ? <><TableWrap><table><thead><tr><th>Bulk RM type</th><th className="numeric">Rate / kg</th><th>Effective period</th><th>Status</th><th>Notes</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rates.map((rate) => <tr key={rate.id}><td><strong>{rate.material_type}</strong></td><td className="numeric">{money(rate.rate_per_kg)}</td><td>{shortDate(rate.effective_from)}<span className="table-subtext">to {rate.effective_to ? shortDate(rate.effective_to) : 'Open ended'}</span></td><td><Badge tone={rate.status === 'active' ? 'success' : 'neutral'}>{titleCase(rate.status)}</Badge></td><td>{rate.notes || '—'}</td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} onClick={() => onEdit(rate)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={rate.status === 'inactive'} onClick={() => onDeactivate(rate)}>Deactivate</Button></div></td></tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <BulkRmRateListEmpty onAdd={onAdd} />}</Card>
 }
 
 function ConversionList({ query, search, setSearch, page, setPage, onAdd, onAddType, onAddRate, onReverse }: { query: ReturnType<typeof useQuery<Page<Conversion>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onAddType: () => void; onAddRate: () => void; onReverse: (record: Conversion) => void }) {
@@ -314,12 +336,6 @@ function RateList({ query, search, setSearch, page, setPage, onAdd, onEdit, onRe
 function RunList({ query, search, setSearch, page, setPage, onAdd, onEdit, onReverse }: { query: ReturnType<typeof useQuery<Page<ProductionRun>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onEdit: (record: ProductionRun) => void; onReverse: (record: ProductionRun) => void }) {
   const rows = query.data?.items ?? []
   return <Card><SectionTitle title="Master production log" description="Posted chip consumption and finished-goods output with immutable costing snapshots." actions={<Button icon={Plus} onClick={onAdd}>Record production</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Product, machine, operator, or reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Machine / operator</th><th>Output</th><th className="numeric">Quantity</th><th>Chip input</th><th className="numeric">Total cost</th><th className="numeric">Unit cost</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => { const output = numberValue(row.output_quantity ?? row.quantity ?? row.qty); const total = numberValue(row.total_cost); return <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.production_date ?? row.date)}</span></td><td><strong>{row.machine ?? 'No machine'}</strong><span className="table-subtext">{row.operator_name ?? recordValue<string>(row, 'employee_name') ?? '—'} · {row.shift ?? 'No shift'}</span></td><td><strong>{row.finished_item_name ?? row.finished_item?.name ?? row.item_name ?? recordValue<string>(row, 'output_item_name') ?? 'Finished item'}</strong><span className="table-subtext">{row.finished_item?.product_type || 'No type'} · {money(row.finished_item?.selling_price)} selling</span></td><td className="numeric">{quantity(output)}</td><td>{row.chip_name ?? row.raw_material_name ?? recordValue<string>(row, 'input_item_name') ?? 'Chip'}<span className="table-subtext">{quantity(row.input_kg ?? row.raw_material_quantity_kg)} kg</span></td><td className="numeric">{money(total)}</td><td className="numeric">{money(row.unit_cost ?? (output ? total / output : 0))}</td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge></td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr> })}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No production runs match the current search." />}</Card>
-}
-
-function PurchaseDialog({ open, record, mutation, onClose }: { open: boolean; record: RawMaterialPurchase | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string; body: Record<string, unknown> }>>; onClose: () => void }) {
-  const form = useForm<PurchaseValues>({ resolver: zodResolver(purchaseSchema), values: { id: record?.id, reference_no: record?.reference_no ?? '', purchase_date: record?.purchase_date ?? record?.date ?? localIsoDate(), material: record?.material_name ?? record?.inventory_items?.name ?? recordValue<string>(record ?? {}, 'item_name') ?? '', supplier_name: record?.supplier_name ?? '', supplier_phone: record?.supplier_phone ?? '', quantity_kg: numberValue(record?.quantity_kg ?? record?.qty), total_cost: numberValue(record?.total_cost), payment_method: (record?.payment_method as PurchaseValues['payment_method']) ?? 'credit', notes: record?.notes ?? '' } })
-  const submit = form.handleSubmit((values) => mutation.mutate({ ...(values.id ? { id: values.id } : {}), body: { ...(values.reference_no ? { reference_no: values.reference_no } : {}), purchase_date: values.purchase_date, material_name: values.material, supplier_name: values.supplier_name || null, supplier_phone: values.supplier_phone || null, quantity_kg: values.quantity_kg, total_cost: values.total_cost, payment_method: values.payment_method, notes: values.notes || null } }))
-  return <Dialog open={open} onClose={onClose} title={record ? 'Correct raw-material purchase' : 'Post raw-material purchase'} description="The server validates stock and posts the accounting entry in one transaction." closeDisabled={mutation.isPending} footer={<><Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>Cancel</Button><Button icon={PackagePlus} loading={mutation.isPending} onClick={() => void submit()}>Save purchase</Button></>}><form className="form-grid form-grid--two" onSubmit={(event) => void submit(event)}><Field label="Purchase date" required error={form.formState.errors.purchase_date?.message}><Input type="date" {...form.register('purchase_date')} /></Field><Field label="Payment method" required><Select {...form.register('payment_method')}><option value="credit">Accounts payable</option><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="cheque">Cheque</option></Select></Field><Field label="Material" required error={form.formState.errors.material?.message}><Input {...form.register('material')} /></Field><Field label="Quantity (kg)" required error={form.formState.errors.quantity_kg?.message}><Input type="number" min="0.000001" step="0.001" {...form.register('quantity_kg')} /></Field><Field label="Supplier name"><Input {...form.register('supplier_name')} /></Field><Field label="Supplier phone"><Input type="tel" {...form.register('supplier_phone')} /></Field><Field label="Total cost" required error={form.formState.errors.total_cost?.message}><Input type="number" min="0.01" step="0.01" {...form.register('total_cost')} /></Field><Field label="Notes"><Textarea rows={2} {...form.register('notes')} /></Field></form></Dialog>
 }
 
 function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, Record<string, unknown>>>; onClose: () => void }) {

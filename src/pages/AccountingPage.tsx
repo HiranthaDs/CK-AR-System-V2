@@ -20,7 +20,7 @@ import {
   TrendingUp,
   WalletCards,
 } from 'lucide-react'
-import { z } from 'zod'
+import { z } from 'zod/v3'
 import { api, pageItems } from '../lib/api'
 import { localIsoDate, money, numberValue, shortDate, titleCase } from '../lib/format'
 import type { AccountBalance, Journal, JournalLine, JsonRecord, LedgerRow, MutationReceipt, Page, ReportPayload } from '../types/api'

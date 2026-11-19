@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../components/Toast'
 import { api, ApiError } from '../lib/api'
 import { PURGE_CONFIRMATION, SettingsPage } from '../pages/SettingsPage'
@@ -28,6 +28,12 @@ vi.mock('../layout/AppShell', () => ({
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+})
+
+beforeEach(() => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    id: 'company-ck', code: 'CK', name: 'CK Plastics', address: '', phone: '', email: '', logo_url: '', is_active: true,
+  })
 })
 
 describe('bilingual system workflow guide', () => {

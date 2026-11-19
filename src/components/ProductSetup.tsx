@@ -3,7 +3,7 @@ import type { UseMutationResult } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { Boxes, Factory, ImagePlus, PackageOpen, Pencil, RotateCcw, Trash2 } from 'lucide-react'
-import { z } from 'zod'
+import { z } from 'zod/v3'
 import { supabase } from '../lib/supabase'
 import { money, numberValue } from '../lib/format'
 import type { InventoryItem, MutationReceipt } from '../types/api'
@@ -154,7 +154,7 @@ export function ProductDialog({ open, record, mutation, onClose }: {
             }}>
               <option value="">Select category</option>
               {PRODUCT_CATEGORIES.map((category) => <option value={category} key={category}>{category}</option>)}
-              <option value="__manual__">Other / manual entry</option>
+              <option value="__manual__">Type (manual entry)</option>
             </Select>
             {manualCategory ? <Input value={field.value} maxLength={100} autoFocus placeholder="Type a category" onChange={field.onChange} /> : null}
           </div>

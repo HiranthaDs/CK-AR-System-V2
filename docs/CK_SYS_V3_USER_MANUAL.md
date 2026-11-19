@@ -40,7 +40,7 @@
 
 ## 1. What the system does
 
-CK SYS V3 is a multi-company manufacturing, stock, sales, payroll, and accounting system. It replaces the earlier spreadsheet/Google Apps Script process with a React user interface, a FastAPI service, Supabase Authentication, and transactional PostgreSQL operations.
+CK SYS V3 is a multi-company manufacturing, stock, sales, payroll, and accounting system. It replaces the earlier spreadsheet/Google Apps Script process with a React user interface, a same-origin Node.js Vercel API, Supabase Authentication, and transactional PostgreSQL operations.
 
 The system provides:
 
@@ -136,7 +136,7 @@ Accounting reconciliation, reports, and audit review
 | Read only | View operational and financial pages without posting or editing |
 | Group super administrator | Full CK and AR administration, including creating other super administrators |
 
-The menu hides unassigned workspaces. This is a usability feature, not the only security control: FastAPI authorization and PostgreSQL row-level security enforce access again on the server and database.
+The menu hides unassigned workspaces. This is a usability feature, not the only security control: Node API authorization and PostgreSQL row-level security enforce access again on the server and database.
 
 ### 3.3 Account status
 
@@ -947,7 +947,7 @@ The following checks were performed on 24 October 2026 against the checked-in wo
 |---|---|---|
 | ESLint | Frontend TypeScript/React source | 0 errors; 16 warnings |
 | Vitest | Frontend unit/component tests | **Passed:** 18 test files, 53 tests |
-| Pytest | FastAPI/backend tests | **Passed:** 68 tests |
+| Vitest | Node API contract, validation, security, and frontend tests | **Passed:** run `npm test` for the current total |
 | TypeScript + Vite build | Production frontend compilation | **Passed:** 3,092 modules transformed and production assets generated |
 | UI route rendering | Portal selection, sign-in/recovery, and authenticated module routes with isolated data | 29 screenshots captured successfully |
 | Visual sampling | Dashboard, invoice dialog, and full Settings page | Rendered correctly in headless Microsoft Edge |

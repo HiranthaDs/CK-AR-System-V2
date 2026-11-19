@@ -45,17 +45,13 @@ input[type="checkbox"] { margin-right: 8px; }
 }
 </style>
 </head>
-<body><main><h1 id="ck-sys-v3-complete-user-manual">CK SYS V3 — Complete User Manual</h1>
-<p><strong>System:</strong> CK SYS V3<br>
-<strong>Companies:</strong> CK Plastics and AR Plastics<br>
-<strong>Manual edition:</strong> 1.0<br>
-<strong>Reviewed against source:</strong> 24 October 2026<br>
-<strong>Audience:</strong> owners, administrators, production staff, inventory reviewers, sales staff, payroll staff, accountants, auditors, and read-only users</p>
+<body><main><h1>CK SYS V3 — Complete User Manual</h1>
+<p><strong>System:</strong> CK SYS V3<br><strong>Companies:</strong> CK Plastics and AR Plastics<br><strong>Manual edition:</strong> 1.0<br><strong>Reviewed against source:</strong> 24 October 2026<br><strong>Audience:</strong> owners, administrators, production staff, inventory reviewers, sales staff, payroll staff, accountants, auditors, and read-only users</p>
 <blockquote>
 <p><strong>Screenshot note:</strong> The screenshots in this manual were captured from the real CK SYS V3 React interface using isolated documentation data. Names, email addresses, references, quantities, and values shown in screenshots are examples; they are not production records.</p>
 </blockquote>
 <hr>
-<h2 id="contents">Contents</h2>
+<h2>Contents</h2>
 <ol>
 <li><a href="#1-what-the-system-does">What the system does</a></li>
 <li><a href="#2-end-to-end-business-flow">End-to-end business flow</a></li>
@@ -82,8 +78,8 @@ input[type="checkbox"] { margin-right: 8px; }
 <li><a href="#23-glossary">Glossary</a></li>
 </ol>
 <hr>
-<h2 id="1-what-the-system-does">1. What the system does</h2>
-<p>CK SYS V3 is a multi-company manufacturing, stock, sales, payroll, and accounting system. It replaces the earlier spreadsheet/Google Apps Script process with a React user interface, a FastAPI service, Supabase Authentication, and transactional PostgreSQL operations.</p>
+<h2>1. What the system does</h2>
+<p>CK SYS V3 is a multi-company manufacturing, stock, sales, payroll, and accounting system. It replaces the earlier spreadsheet/Google Apps Script process with a React user interface, a same-origin Node.js Vercel API, Supabase Authentication, and transactional PostgreSQL operations.</p>
 <p>The system provides:</p>
 <ul>
 <li>separate CK Plastics and AR Plastics portals;</li>
@@ -101,7 +97,7 @@ input[type="checkbox"] { margin-right: 8px; }
 <li>an append-only activity trail; and</li>
 <li>administrator-controlled user access and company data reset.</li>
 </ul>
-<h3 id="11-important-system-principles">1.1 Important system principles</h3>
+<h3>1.1 Important system principles</h3>
 <ol>
 <li><strong>Choose the correct company first.</strong> CK and AR accounting and operational records are separated.</li>
 <li><strong>Use the operational workflow that matches the event.</strong> For example, create a sales invoice in Sales, not as a manual journal.</li>
@@ -111,7 +107,7 @@ input[type="checkbox"] { margin-right: 8px; }
 <li><strong>Never share an account.</strong> Each person should use an individual Supabase Authentication identity.</li>
 </ol>
 <hr>
-<h2 id="2-end-to-end-business-flow">2. End-to-end business flow</h2>
+<h2>2. End-to-end business flow</h2>
 <p>The normal operating sequence is:</p>
 <pre><code class="language-text">Administrator setup
       ↓
@@ -137,7 +133,7 @@ Employee work and overtime → payroll → payroll payment
       ↓
 Accounting reconciliation, reports, and audit review
 </code></pre>
-<h3 id="21-recommended-first-use-order">2.1 Recommended first-use order</h3>
+<h3>2.1 Recommended first-use order</h3>
 <ol>
 <li>A group super administrator creates individual user accounts.</li>
 <li>The administrator assigns CK, AR, or both companies and the minimum required capability packages.</li>
@@ -151,8 +147,8 @@ Accounting reconciliation, reports, and audit review
 <li>In <strong>Activity &amp; audit</strong>, review sensitive or unexpected events.</li>
 </ol>
 <hr>
-<h2 id="3-access-companies-and-permissions">3. Access, companies, and permissions</h2>
-<h3 id="31-company-separation">3.1 Company separation</h3>
+<h2>3. Access, companies, and permissions</h2>
+<h3>3.1 Company separation</h3>
 <ul>
 <li><strong>CK portal:</strong> paths start with <code>/ck/</code>.</li>
 <li><strong>AR portal:</strong> paths start with <code>/ar/</code>.</li>
@@ -161,7 +157,7 @@ Accounting reconciliation, reports, and audit review
 <li>The inventory screen distinguishes company-owned stock from shared physical warehouse availability.</li>
 <li>Having access to CK does not automatically grant AR access.</li>
 </ul>
-<h3 id="32-capability-packages">3.2 Capability packages</h3>
+<h3>3.2 Capability packages</h3>
 <table>
 <thead>
 <tr>
@@ -169,8 +165,7 @@ Accounting reconciliation, reports, and audit review
 <th>Intended access</th>
 </tr>
 </thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td>Accounting &amp; PDF Studio</td>
 <td>Accounting, financial reports, PDF Studio, settlements, and payroll review</td>
 </tr>
@@ -190,10 +185,9 @@ Accounting reconciliation, reports, and audit review
 <td>Group super administrator</td>
 <td>Full CK and AR administration, including creating other super administrators</td>
 </tr>
-</tbody>
-</table>
-<p>The menu hides unassigned workspaces. This is a usability feature, not the only security control: FastAPI authorization and PostgreSQL row-level security enforce access again on the server and database.</p>
-<h3 id="33-account-status">3.3 Account status</h3>
+</tbody></table>
+<p>The menu hides unassigned workspaces. This is a usability feature, not the only security control: Node API authorization and PostgreSQL row-level security enforce access again on the server and database.</p>
+<h3>3.3 Account status</h3>
 <ul>
 <li><strong>Active:</strong> the person can sign in and use assigned capabilities.</li>
 <li><strong>Inactive:</strong> access is rejected even if an older browser session still exists.</li>
@@ -202,22 +196,22 @@ Accounting reconciliation, reports, and audit review
 <li>Removing access preserves the underlying authentication identity and historical audit attribution.</li>
 </ul>
 <hr>
-<h2 id="4-signing-in">4. Signing in</h2>
-<h3 id="41-select-a-company-portal">4.1 Select a company portal</h3>
+<h2>4. Signing in</h2>
+<h3>4.1 Select a company portal</h3>
 <ol>
 <li>Open the base application URL.</li>
 <li>Select <strong>CK Plastics login</strong> or <strong>AR Plastics login</strong>.</li>
 <li>Confirm that the company name in the login page matches the records you intend to use.</li>
 </ol>
-<p><img alt="Company portal selection" src="screenshots/user-manual/01-company-portal-selection.png"></p>
-<h3 id="42-sign-in-with-email-and-password">4.2 Sign in with email and password</h3>
+<p><img src="screenshots/user-manual/01-company-portal-selection.png" alt="Company portal selection"></p>
+<h3>4.2 Sign in with email and password</h3>
 <ol>
 <li>Enter the individual account email.</li>
 <li>Enter the password.</li>
 <li>Select <strong>Sign in securely</strong>.</li>
 <li>After sign-in, confirm the company name in the left sidebar and top bar.</li>
 </ol>
-<p><img alt="CK Plastics sign-in" src="screenshots/user-manual/02-ck-sign-in.png"></p>
+<p><img src="screenshots/user-manual/02-ck-sign-in.png" alt="CK Plastics sign-in"></p>
 <p>If sign-in fails:</p>
 <ul>
 <li>verify the email and password;</li>
@@ -225,7 +219,7 @@ Accounting reconciliation, reports, and audit review
 <li>ask an administrator to confirm that the profile and company membership are active; and</li>
 <li>do not repeatedly guess a password—use recovery instead.</li>
 </ul>
-<h3 id="43-recover-a-forgotten-password">4.3 Recover a forgotten password</h3>
+<h3>4.3 Recover a forgotten password</h3>
 <ol>
 <li>On the company login page, select <strong>Forgot your password?</strong></li>
 <li>Enter the registered email.</li>
@@ -237,13 +231,13 @@ Accounting reconciliation, reports, and audit review
 <li>The password must have at least 10 characters, one lowercase letter, one uppercase letter, one number, and one symbol.</li>
 <li>If requested, sign in again with the new password.</li>
 </ol>
-<p><img alt="Password recovery" src="screenshots/user-manual/03-password-recovery.png"></p>
+<p><img src="screenshots/user-manual/03-password-recovery.png" alt="Password recovery"></p>
 <p>Hosted six-digit PIN delivery depends on custom SMTP and the configured Supabase recovery template. If the mail provider supplies a link instead, the link follows the same secure reset flow.</p>
-<h3 id="44-sign-out">4.4 Sign out</h3>
+<h3>4.4 Sign out</h3>
 <p>Select the sign-out icon beside the user profile at the bottom of the sidebar. Sign-out ends the current browser/device session only; it does not automatically sign out other devices.</p>
 <hr>
-<h2 id="5-navigation-and-common-controls">5. Navigation and common controls</h2>
-<h3 id="51-main-layout">5.1 Main layout</h3>
+<h2>5. Navigation and common controls</h2>
+<h3>5.1 Main layout</h3>
 <ul>
 <li><strong>Left sidebar:</strong> module navigation, company identity, connection state, signed-in identity, and sign-out.</li>
 <li><strong>Top bar:</strong> current page, company, fiscal year, API state, and Refresh.</li>
@@ -253,7 +247,7 @@ Accounting reconciliation, reports, and audit review
 <li><strong>Mobile menu:</strong> opens the sidebar on narrow screens.</li>
 <li><strong>Bottom navigation:</strong> provides module links on mobile.</li>
 </ul>
-<h3 id="52-common-statuses">5.2 Common statuses</h3>
+<h3>5.2 Common statuses</h3>
 <table>
 <thead>
 <tr>
@@ -261,8 +255,7 @@ Accounting reconciliation, reports, and audit review
 <th>Meaning</th>
 </tr>
 </thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td>Posted</td>
 <td>The record and its business effects are active</td>
 </tr>
@@ -290,27 +283,26 @@ Accounting reconciliation, reports, and audit review
 <td>Inactive</td>
 <td>Retained for history but not available for new selection</td>
 </tr>
-</tbody>
-</table>
-<h3 id="53-refresh-and-stale-data-warnings">5.3 Refresh and stale-data warnings</h3>
+</tbody></table>
+<h3>5.3 Refresh and stale-data warnings</h3>
 <p>If a refresh fails while older data is on screen, the application may retain the last successfully loaded snapshot and show a warning. Do not use that snapshot for a financial or stock decision until Refresh succeeds.</p>
 <hr>
-<h2 id="6-first-time-administrator-setup">6. First-time administrator setup</h2>
-<h3 id="61-create-login-accounts">6.1 Create login accounts</h3>
+<h2>6. First-time administrator setup</h2>
+<h3>6.1 Create login accounts</h3>
 <ol>
 <li>Open <strong>Settings</strong> in CK or AR.</li>
 <li>Under <strong>Login accounts &amp; access</strong>, select <strong>Create account</strong>.</li>
-<li>Enter the person's display name.</li>
-<li>Enter the person's unique email.</li>
+<li>Enter the person&#39;s display name.</li>
+<li>Enter the person&#39;s unique email.</li>
 <li>Enter a strong temporary password.</li>
 <li>Choose <strong>CK</strong>, <strong>AR</strong>, or <strong>Both</strong>.</li>
-<li>Select only the capability packages required for the person's job.</li>
+<li>Select only the capability packages required for the person&#39;s job.</li>
 <li>Select <strong>Group super administrator</strong> only for an owner who must administer both systems.</li>
 <li>Select <strong>Create account</strong>.</li>
 <li>Ask the person to sign in and change the temporary password immediately.</li>
 </ol>
-<p><img alt="Create account dialog" src="screenshots/user-manual/29-create-account-dialog.png"></p>
-<h3 id="62-configure-conversion-setup">6.2 Configure conversion setup</h3>
+<p><img src="screenshots/user-manual/29-create-account-dialog.png" alt="Create account dialog"></p>
+<h3>6.2 Configure conversion setup</h3>
 <ol>
 <li>Open <strong>Settings</strong>.</li>
 <li>Under <strong>Conversion types &amp; rates</strong>, select <strong>Add type</strong>.</li>
@@ -321,13 +313,13 @@ Accounting reconciliation, reports, and audit review
 <li>Save the rate.</li>
 <li>Confirm that both entries appear as Active.</li>
 </ol>
-<h3 id="63-create-employees-before-worker-allocation">6.3 Create employees before worker allocation</h3>
+<h3>6.3 Create employees before worker allocation</h3>
 <p>Production conversions and production operators refer to employee records. Create the employee master and pay terms before entering worker allocations.</p>
 <hr>
-<h2 id="7-dashboard">7. Dashboard</h2>
+<h2>7. Dashboard</h2>
 <p>Open <strong>Overview</strong> after sign-in and at the beginning and end of each operating day.</p>
-<p><img alt="Dashboard" src="screenshots/user-manual/04-dashboard.png"></p>
-<h3 id="71-what-to-review">7.1 What to review</h3>
+<p><img src="screenshots/user-manual/04-dashboard.png" alt="Dashboard"></p>
+<h3>7.1 What to review</h3>
 <ul>
 <li><strong>Revenue:</strong> posted revenue in the selected fiscal year.</li>
 <li><strong>Net result:</strong> revenue less COGS and expenses.</li>
@@ -338,32 +330,34 @@ Accounting reconciliation, reports, and audit review
 <li><strong>Posted activity:</strong> counts of purchases, conversions, production, sales, and payroll.</li>
 <li><strong>Workspace cards:</strong> direct links to operational modules.</li>
 </ul>
-<h3 id="72-dashboard-control-procedure">7.2 Dashboard control procedure</h3>
+<h3>7.2 Dashboard control procedure</h3>
 <ol>
 <li>Confirm the company in the sidebar.</li>
 <li>Confirm the fiscal year.</li>
 <li>Select <strong>Refresh</strong>.</li>
 <li>Look for unexpected negative/zero values or sudden changes.</li>
-<li>Compare stock stages with the day's physical activity.</li>
+<li>Compare stock stages with the day&#39;s physical activity.</li>
 <li>Review receivables and payables.</li>
 <li>Investigate differences through Inventory, Accounting, and Activity &amp; audit.</li>
 </ol>
 <hr>
-<h2 id="8-production-and-conversion">8. Production and conversion</h2>
+<h2>8. Production and conversion</h2>
 <p>Open <strong>Production</strong>. The tabs are Dashboard, Bulk RM, Conversions, Rate master, and Production runs.</p>
-<p><img alt="Production dashboard" src="screenshots/user-manual/05-production-dashboard.png"></p>
-<h3 id="81-production-dashboard">8.1 Production dashboard</h3>
-<p>Review today's output, today's chip input, monthly output, live bulk/chip value, recent production, and current pipeline counts. These values are calculated from server data.</p>
-<h3 id="82-post-a-raw-material-purchase">8.2 Post a raw-material purchase</h3>
+<p><img src="screenshots/user-manual/05-production-dashboard.png" alt="Production dashboard"></p>
+<h3>8.1 Production dashboard</h3>
+<p>Review today&#39;s output, today&#39;s chip input, monthly output, live bulk/chip value, recent production, and current pipeline counts. These values are calculated from server data.</p>
+<h3>8.2 Post a raw-material purchase</h3>
 <ol>
 <li>Open <strong>Bulk RM</strong>.</li>
 <li>Select <strong>New purchase</strong>.</li>
 <li>Enter the purchase date.</li>
-<li>Select the payment method:
-   - Accounts payable for a credit supplier purchase;
-   - Cash;
-   - Bank transfer; or
-   - Cheque.</li>
+<li>Select the payment method:<ul>
+<li>Accounts payable for a credit supplier purchase;</li>
+<li>Cash;</li>
+<li>Bank transfer; or</li>
+<li>Cheque.</li>
+</ul>
+</li>
 <li>Enter the material name.</li>
 <li>Enter quantity in kilograms.</li>
 <li>Enter supplier name and phone when known.</li>
@@ -374,10 +368,10 @@ Accounting reconciliation, reports, and audit review
 <li>Open Inventory and confirm bulk quantity/value.</li>
 <li>Open Accounting and confirm the related journal.</li>
 </ol>
-<p><img alt="Bulk raw-material list" src="screenshots/user-manual/06-production-bulk-rm.png"></p>
-<p><img alt="Post purchase dialog" src="screenshots/user-manual/07-post-purchase-dialog.png"></p>
+<p><img src="screenshots/user-manual/06-production-bulk-rm.png" alt="Bulk raw-material list"></p>
+<p><img src="screenshots/user-manual/07-post-purchase-dialog.png" alt="Post purchase dialog"></p>
 <p>The server validates and posts stock and accounting in one transaction. A failed save should not leave only one side posted.</p>
-<h3 id="83-post-a-bulk-to-chip-conversion">8.3 Post a bulk-to-chip conversion</h3>
+<h3>8.3 Post a bulk-to-chip conversion</h3>
 <ol>
 <li>Open <strong>Conversions</strong>.</li>
 <li>Select <strong>New conversion</strong>.</li>
@@ -391,15 +385,15 @@ Accounting reconciliation, reports, and audit review
 <li>Enter conversion overhead when applicable.</li>
 <li>Add at least one worker.</li>
 <li>For each worker, select the employee, choose or enter the task, enter quantity, and enter the rate per kg.</li>
-<li>Review each worker's calculated amount.</li>
+<li>Review each worker&#39;s calculated amount.</li>
 <li>Select <strong>Post conversion &amp; earnings</strong>.</li>
 <li>Verify that bulk stock decreased and chip stock increased.</li>
 <li>Verify each worker amount under <strong>Staff &amp; payroll → Open earnings</strong>.</li>
 </ol>
-<p><img alt="Conversions workspace" src="screenshots/user-manual/08-production-conversions.png"></p>
-<h3 id="84-maintain-the-rate-master">8.4 Maintain the rate master</h3>
+<p><img src="screenshots/user-manual/08-production-conversions.png" alt="Conversions workspace"></p>
+<h3>8.4 Maintain the rate master</h3>
 <p>Use <strong>Rate master</strong> for repeatable work types. Effective dates matter: the conversion date determines which saved rate is applicable. Editing a prefilled value during entry switches that value to a manual rate for the transaction.</p>
-<h3 id="85-record-a-production-run">8.5 Record a production run</h3>
+<h3>8.5 Record a production run</h3>
 <ol>
 <li>Open <strong>Production runs</strong> or select <strong>Record production</strong>.</li>
 <li>Enter the production date.</li>
@@ -409,7 +403,7 @@ Accounting reconciliation, reports, and audit review
 <li>Select the chip input item.</li>
 <li>Enter chip input kg, not exceeding available stock.</li>
 <li>Select an existing finished product or enter a new finished-product name.</li>
-<li>Enter the selling price. It becomes the product's default invoice price but remains editable on an invoice.</li>
+<li>Enter the selling price. It becomes the product&#39;s default invoice price but remains editable on an invoice.</li>
 <li>Enter output quantity.</li>
 <li>Enter overhead cost and notes.</li>
 <li>Review estimated material, overhead, total, and unit cost.</li>
@@ -417,38 +411,38 @@ Accounting reconciliation, reports, and audit review
 <li>Verify chip consumption and finished-stock output in Inventory.</li>
 <li>Verify the production costing journal in Accounting.</li>
 </ol>
-<p><img alt="Production runs" src="screenshots/user-manual/09-production-runs.png"></p>
-<h3 id="86-production-corrections">8.6 Production corrections</h3>
+<p><img src="screenshots/user-manual/09-production-runs.png" alt="Production runs"></p>
+<h3>8.6 Production corrections</h3>
 <ul>
 <li><strong>Edit/Correct:</strong> releases the existing effects and reposts the corrected transaction atomically where supported.</li>
 <li><strong>Reverse:</strong> retains the original row, marks it reversed, and posts offsetting stock/financial effects.</li>
 <li>Always enter the real correction date/value and record a clear reason.</li>
 </ul>
 <hr>
-<h2 id="9-inventory">9. Inventory</h2>
+<h2>9. Inventory</h2>
 <p>Inventory is intentionally read-only. Stock quantities change only through purchasing, conversion, production, and sales.</p>
-<p><img alt="Finished inventory" src="screenshots/user-manual/10-inventory-finished.png"></p>
-<h3 id="91-summary-cards">9.1 Summary cards</h3>
+<p><img src="screenshots/user-manual/10-inventory-finished.png" alt="Finished inventory"></p>
+<h3>9.1 Summary cards</h3>
 <ul>
 <li>company finished-goods value;</li>
 <li>number of finished products;</li>
 <li>shared physical warehouse stock; and</li>
 <li>company work-in-process value for bulk and chips.</li>
 </ul>
-<h3 id="92-tabs">9.2 Tabs</h3>
+<h3>9.2 Tabs</h3>
 <ul>
 <li><strong>Finished products:</strong> available finished goods, company quantity, shared quantity, selling price, weighted average cost, and value.</li>
 <li><strong>Bulk:</strong> raw-material position.</li>
 <li><strong>Chips:</strong> converted-material position.</li>
 <li><strong>Read-only report:</strong> printable/searchable inventory report.</li>
 </ul>
-<h3 id="93-company-stock-versus-shared-warehouse-stock">9.3 Company stock versus shared warehouse stock</h3>
+<h3>9.3 Company stock versus shared warehouse stock</h3>
 <ul>
 <li><strong>Company stock</strong> is the quantity owned/allocated to the current company.</li>
 <li><strong>Shared warehouse</strong> is physical availability across permitted company stock.</li>
 <li>Sales and production must still pass server-side company and availability rules; visibility does not grant editing rights.</li>
 </ul>
-<h3 id="94-inventory-verification-procedure">9.4 Inventory verification procedure</h3>
+<h3>9.4 Inventory verification procedure</h3>
 <ol>
 <li>Refresh the page.</li>
 <li>Select the relevant stage.</li>
@@ -460,13 +454,13 @@ Accounting reconciliation, reports, and audit review
 <li>Check the last company movement date.</li>
 <li>Use the read-only report for printing or PDF export.</li>
 </ol>
-<p><img alt="Inventory report" src="screenshots/user-manual/11-inventory-report.png"></p>
+<p><img src="screenshots/user-manual/11-inventory-report.png" alt="Inventory report"></p>
 <p>If a stock figure is wrong, correct or reverse the source transaction. Do not attempt a direct inventory edit.</p>
 <hr>
-<h2 id="10-sales-and-receivables">10. Sales and receivables</h2>
+<h2>10. Sales and receivables</h2>
 <p>Open <strong>Sales</strong>. The tabs are Invoices, Outstanding, and Sales report.</p>
-<p><img alt="Sales invoices" src="screenshots/user-manual/12-sales-invoices.png"></p>
-<h3 id="101-create-a-sales-invoice">10.1 Create a sales invoice</h3>
+<p><img src="screenshots/user-manual/12-sales-invoices.png" alt="Sales invoices"></p>
+<h3>10.1 Create a sales invoice</h3>
 <ol>
 <li>Select <strong>New invoice</strong>.</li>
 <li>Enter a unique invoice number.</li>
@@ -475,23 +469,25 @@ Accounting reconciliation, reports, and audit review
 <li>Enter a customer phone number if invoice sharing by WhatsApp may be required.</li>
 <li>Select the initial payment method.</li>
 <li>Enter the amount already received, or 0 for a fully outstanding invoice.</li>
-<li>For each line:
-   - select the finished product;
-   - confirm available stock;
-   - enter quantity;
-   - review or change the unit price; and
-   - enter an offer discount if applicable.</li>
+<li>For each line:<ul>
+<li>select the finished product;</li>
+<li>confirm available stock;</li>
+<li>enter quantity;</li>
+<li>review or change the unit price; and</li>
+<li>enter an offer discount if applicable.</li>
+</ul>
+</li>
 <li>Use <strong>Add line</strong> for additional products.</li>
 <li>Review the invoice total.</li>
 <li>Select <strong>Save invoice</strong>.</li>
 <li>Confirm the invoice, paid amount, due amount, and payment status in the table.</li>
 <li>Verify finished-stock reduction and accounting entries.</li>
 </ol>
-<p><img alt="New invoice dialog" src="screenshots/user-manual/13-new-invoice-dialog.png"></p>
+<p><img src="screenshots/user-manual/13-new-invoice-dialog.png" alt="New invoice dialog"></p>
 <p>The server recalculates availability, weighted COGS, and journal lines. A browser-entered figure cannot override stock availability or server costing.</p>
-<h3 id="102-record-a-receipt">10.2 Record a receipt</h3>
+<h3>10.2 Record a receipt</h3>
 <ol>
-<li>Open the invoice's receipt/payment action.</li>
+<li>Open the invoice&#39;s receipt/payment action.</li>
 <li>Review the current balance.</li>
 <li>Enter payment date.</li>
 <li>Enter the amount. It must be positive and cannot exceed the remaining balance.</li>
@@ -501,21 +497,21 @@ Accounting reconciliation, reports, and audit review
 <li>Confirm the updated paid and due amounts.</li>
 <li>Confirm the receipt in Accounting.</li>
 </ol>
-<h3 id="103-outstanding-invoices">10.3 Outstanding invoices</h3>
+<h3>10.3 Outstanding invoices</h3>
 <p>Use <strong>Outstanding</strong> to follow up unpaid and partially paid invoices. Search by invoice/customer and reconcile balances to the receivables account.</p>
-<p><img alt="Outstanding invoices" src="screenshots/user-manual/14-sales-outstanding.png"></p>
-<h3 id="104-invoice-details-and-printing">10.4 Invoice details and printing</h3>
+<p><img src="screenshots/user-manual/14-sales-outstanding.png" alt="Outstanding invoices"></p>
+<h3>10.4 Invoice details and printing</h3>
 <p>Open invoice details to review lines and receipt history. The invoice view supports printing and PDF saving. WhatsApp sharing requires a valid customer phone number.</p>
-<h3 id="105-reverse-an-invoice-or-receipt">10.5 Reverse an invoice or receipt</h3>
+<h3>10.5 Reverse an invoice or receipt</h3>
 <ul>
 <li>Reversing an invoice retains it and offsets stock, revenue, COGS, and related receipts according to server rules.</li>
 <li>Reversing a receipt retains the receipt and offsets its accounting effect.</li>
 <li>Use reversal for a posted transaction; do not create an unrelated negative invoice as a workaround.</li>
 </ul>
 <hr>
-<h2 id="11-staff-and-payroll">11. Staff and payroll</h2>
+<h2>11. Staff and payroll</h2>
 <p>Open <strong>Staff &amp; payroll</strong>. The tabs are Employees, Daily work, OT hours, Open earnings, Payroll, and Payroll report.</p>
-<h3 id="111-create-an-employee">11.1 Create an employee</h3>
+<h3>11.1 Create an employee</h3>
 <ol>
 <li>Open <strong>Employees</strong>.</li>
 <li>Select <strong>New employee</strong>.</li>
@@ -524,19 +520,21 @@ Accounting reconciliation, reports, and audit review
 <li>Select or enter job role, employment type, and shift.</li>
 <li>Enter EPF number and ETF reference when applicable.</li>
 <li>Select Active status.</li>
-<li>Choose the pay model:
-   - Monthly salary;
-   - Daily wage;
-   - Hybrid (monthly plus work claims); or
-   - Piecework.</li>
+<li>Choose the pay model:<ul>
+<li>Monthly salary;</li>
+<li>Daily wage;</li>
+<li>Hybrid (monthly plus work claims); or</li>
+<li>Piecework.</li>
+</ul>
+</li>
 <li>Enter the applicable monthly rate, daily rate, OT rate, and effective date.</li>
 <li>Review standard hours/days and statutory rates/defaults.</li>
 <li>Enter bank, branch, account name, and account number when used.</li>
 <li>Save the employee.</li>
 </ol>
-<p><img alt="Employee master" src="screenshots/user-manual/15-staff-employees.png"></p>
+<p><img src="screenshots/user-manual/15-staff-employees.png" alt="Employee master"></p>
 <p>Deactivating an employee removes the person from active selections but preserves historical work and payroll.</p>
-<h3 id="112-record-daily-work">11.2 Record daily work</h3>
+<h3>11.2 Record daily work</h3>
 <ol>
 <li>Open <strong>Daily work</strong>.</li>
 <li>Select <strong>Record work</strong>.</li>
@@ -549,10 +547,10 @@ Accounting reconciliation, reports, and audit review
 <li>Save the record.</li>
 <li>Verify the amount in <strong>Open earnings</strong>.</li>
 </ol>
-<p><img alt="Daily work" src="screenshots/user-manual/16-staff-daily-work.png"></p>
-<h3 id="113-record-overtime">11.3 Record overtime</h3>
+<p><img src="screenshots/user-manual/16-staff-daily-work.png" alt="Daily work"></p>
+<h3>11.3 Record overtime</h3>
 <ol>
-<li>Open <strong>OT hours</strong> or an employee's <strong>OT details</strong>.</li>
+<li>Open <strong>OT hours</strong> or an employee&#39;s <strong>OT details</strong>.</li>
 <li>Select <strong>Add OT hours</strong>.</li>
 <li>Select the employee if required.</li>
 <li>Enter OT date.</li>
@@ -561,10 +559,10 @@ Accounting reconciliation, reports, and audit review
 <li>Add a note.</li>
 <li>Save and verify the calculated amount.</li>
 </ol>
-<p><img alt="Overtime" src="screenshots/user-manual/17-staff-overtime.png"></p>
-<h3 id="114-review-open-earnings">11.4 Review open earnings</h3>
+<p><img src="screenshots/user-manual/17-staff-overtime.png" alt="Overtime"></p>
+<h3>11.4 Review open earnings</h3>
 <p>Open earnings can include daily wages, manual piecework, conversion-worker earnings, and overtime that have not yet been claimed by payroll.</p>
-<p><img alt="Open earnings" src="screenshots/user-manual/18-staff-open-earnings.png"></p>
+<p><img src="screenshots/user-manual/18-staff-open-earnings.png" alt="Open earnings"></p>
 <p>Before payroll:</p>
 <ol>
 <li>search for the employee;</li>
@@ -572,7 +570,7 @@ Accounting reconciliation, reports, and audit review
 <li>reverse incorrect source records before claiming them; and</li>
 <li>ensure no item has already been claimed.</li>
 </ol>
-<h3 id="115-create-payroll">11.5 Create payroll</h3>
+<h3>11.5 Create payroll</h3>
 <ol>
 <li>Open <strong>Payroll</strong>.</li>
 <li>Select <strong>Create payroll</strong>.</li>
@@ -590,12 +588,12 @@ Accounting reconciliation, reports, and audit review
 <li>If payable, post payments only as money is actually transferred.</li>
 <li>Verify the payroll journal and employee paysheet.</li>
 </ol>
-<p><img alt="Payroll" src="screenshots/user-manual/19-staff-payroll.png"></p>
+<p><img src="screenshots/user-manual/19-staff-payroll.png" alt="Payroll"></p>
 <p>Each eligible earning is claimed once. The server prevents the same work from being settled repeatedly.</p>
-<h3 id="116-payroll-report-and-paysheet">11.6 Payroll report and paysheet</h3>
+<h3>11.6 Payroll report and paysheet</h3>
 <p>Use <strong>Payroll report</strong> to select month, search employees, inspect settlement status, and open detailed paysheets. A paysheet can include overview, salary/work, allowances, deductions, employer contributions, payments, and accounting.</p>
-<p><img alt="Payroll report" src="screenshots/user-manual/20-staff-payroll-report.png"></p>
-<h3 id="117-payroll-reversals">11.7 Payroll reversals</h3>
+<p><img src="screenshots/user-manual/20-staff-payroll-report.png" alt="Payroll report"></p>
+<h3>11.7 Payroll reversals</h3>
 <ul>
 <li>Reversing work/OT retains the original and removes eligible unclaimed earnings.</li>
 <li>Reversing payroll posts offsetting accounting effects and releases claims according to server rules.</li>
@@ -603,21 +601,21 @@ Accounting reconciliation, reports, and audit review
 <li>Recheck open earnings and the ledger after every reversal.</li>
 </ul>
 <hr>
-<h2 id="12-accounting">12. Accounting</h2>
+<h2>12. Accounting</h2>
 <p>Open <strong>Accounting</strong>. The tabs are Overview, Quick entry, Journals, Master ledger, Statements, and PDF Studio.</p>
-<h3 id="121-overview-and-trial-balance">12.1 Overview and trial balance</h3>
-<p><img alt="Accounting overview" src="screenshots/user-manual/21-accounting-overview.png"></p>
+<h3>12.1 Overview and trial balance</h3>
+<p><img src="screenshots/user-manual/21-accounting-overview.png" alt="Accounting overview"></p>
 <ol>
 <li>Confirm the fiscal year.</li>
 <li>Select Refresh.</li>
 <li>Confirm <strong>Trial balance verified</strong>.</li>
 <li>Review Assets, Liabilities, Equity, and Net result.</li>
-<li>Review each account's debit, credit, and balance.</li>
+<li>Review each account&#39;s debit, credit, and balance.</li>
 <li>If a mismatch appears, stop report issuance and investigate the ledger.</li>
 </ol>
-<h3 id="122-quick-double-entry">12.2 Quick double-entry</h3>
+<h3>12.2 Quick double-entry</h3>
 <p>Use Quick entry only for a real cash/bank movement that does not belong to Sales, Purchasing, Inventory, Payroll, Tax, or Intercompany workflows.</p>
-<p><img alt="Quick accounting entry" src="screenshots/user-manual/22-accounting-quick-entry.png"></p>
+<p><img src="screenshots/user-manual/22-accounting-quick-entry.png" alt="Quick accounting entry"></p>
 <ol>
 <li>Enter the real posting date inside the selected fiscal year and an open period.</li>
 <li>Select <strong>Money in</strong> or <strong>Money out</strong>.</li>
@@ -639,8 +637,7 @@ Accounting reconciliation, reports, and audit review
 <th>Credit</th>
 </tr>
 </thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td>Money in</td>
 <td>Offset cash/bank asset</td>
 <td>Primary revenue, liability, equity, or transfer account</td>
@@ -650,10 +647,9 @@ Accounting reconciliation, reports, and audit review
 <td>Primary expense, asset, or liability</td>
 <td>Offset cash/bank asset</td>
 </tr>
-</tbody>
-</table>
+</tbody></table>
 <p>The system rejects identical accounts, unknown accounts, non-asset money offsets, protected control accounts, zero/negative amounts, closed dates, and unbalanced results.</p>
-<h3 id="123-advanced-journals">12.3 Advanced journals</h3>
+<h3>12.3 Advanced journals</h3>
 <p>Use <strong>Journals → New journal</strong> only when an accountant understands the required debit and credit lines.</p>
 <ol>
 <li>Enter journal date and memo.</li>
@@ -664,15 +660,15 @@ Accounting reconciliation, reports, and audit review
 <li>Confirm total debits equal total credits to the cent.</li>
 <li>Select <strong>Post journal</strong>.</li>
 </ol>
-<p><img alt="Journals" src="screenshots/user-manual/23-accounting-journals.png"></p>
-<h3 id="124-master-ledger">12.4 Master ledger</h3>
+<p><img src="screenshots/user-manual/23-accounting-journals.png" alt="Journals"></p>
+<h3>12.4 Master ledger</h3>
 <p>Use the ledger to search posted lines across all modules. Filter by search text, source module, account category, and month.</p>
-<p><img alt="Master ledger" src="screenshots/user-manual/24-accounting-ledger.png"></p>
+<p><img src="screenshots/user-manual/24-accounting-ledger.png" alt="Master ledger"></p>
 <p>Visible-page totals may not balance if filters split a journal. Reconciliation must use the complete relevant set.</p>
-<h3 id="125-financial-statements">12.5 Financial statements</h3>
+<h3>12.5 Financial statements</h3>
 <p>Open <strong>Statements</strong> to obtain the server-calculated financial summary for the selected year. Verify the fiscal year, report generation date, and trial balance before printing or distributing.</p>
-<p><img alt="Financial statements" src="screenshots/user-manual/25-accounting-statements.png"></p>
-<h3 id="126-pdf-studio">12.6 PDF Studio</h3>
+<p><img src="screenshots/user-manual/25-accounting-statements.png" alt="Financial statements"></p>
+<h3>12.6 PDF Studio</h3>
 <ol>
 <li>Select <strong>PDF Studio</strong>.</li>
 <li>Read the restriction notice.</li>
@@ -684,13 +680,13 @@ Accounting reconciliation, reports, and audit review
 <li>Exit Studio when complete.</li>
 </ol>
 <p>PDF Studio changes are local to the export and are not written to the ledger or database. The output is internal, user-edited, unaudited, and not approved for statutory, tax, regulatory, banking, lending, certification, or other official use.</p>
-<h3 id="127-journal-reversal">12.7 Journal reversal</h3>
+<h3>12.7 Journal reversal</h3>
 <p>Posted journals are corrected by reversal. Select Reverse, confirm the action, and then post the correct entry. The original and offset remain available for audit.</p>
 <hr>
-<h2 id="13-activity-and-audit">13. Activity and audit</h2>
+<h2>13. Activity and audit</h2>
 <p>The <strong>Activity &amp; audit</strong> page is permission-controlled and company-scoped.</p>
-<p><img alt="Activity and audit" src="screenshots/user-manual/26-activity-audit.png"></p>
-<h3 id="131-filter-and-investigate">13.1 Filter and investigate</h3>
+<p><img src="screenshots/user-manual/26-activity-audit.png" alt="Activity and audit"></p>
+<h3>13.1 Filter and investigate</h3>
 <ol>
 <li>Open <strong>Activity &amp; audit</strong>.</li>
 <li>Set date range.</li>
@@ -701,7 +697,7 @@ Accounting reconciliation, reports, and audit review
 <li>Use CSV export for controlled analysis.</li>
 <li>Use Print for a human-readable report.</li>
 </ol>
-<h3 id="132-audit-interpretation">13.2 Audit interpretation</h3>
+<h3>13.2 Audit interpretation</h3>
 <ul>
 <li><code>insert</code> means a record was created.</li>
 <li><code>update</code> means a record changed.</li>
@@ -711,10 +707,10 @@ Accounting reconciliation, reports, and audit review
 </ul>
 <p>Preserve request IDs when reporting an error; they help correlate browser/API behavior with the audit event.</p>
 <hr>
-<h2 id="14-account-and-password-security">14. Account and password security</h2>
+<h2>14. Account and password security</h2>
 <p>Every signed-in person can open <strong>Account &amp; security</strong>.</p>
-<p><img alt="Account and security" src="screenshots/user-manual/27-account-security.png"></p>
-<h3 id="141-change-a-signed-in-password">14.1 Change a signed-in password</h3>
+<p><img src="screenshots/user-manual/27-account-security.png" alt="Account and security"></p>
+<h3>14.1 Change a signed-in password</h3>
 <ol>
 <li>Confirm the signed-in identity and current company.</li>
 <li>Select <strong>Send email code</strong>.</li>
@@ -725,7 +721,7 @@ Accounting reconciliation, reports, and audit review
 <li>If the secure session cannot be renewed automatically, sign in manually with the new password.</li>
 </ol>
 <p>CK SYS does not store the password or code. Supabase Authentication sends and verifies them.</p>
-<h3 id="142-account-security-rules">14.2 Account security rules</h3>
+<h3>14.2 Account security rules</h3>
 <ul>
 <li>Never share passwords or OTP codes.</li>
 <li>Do not store passwords in spreadsheets, chat, or browser notes.</li>
@@ -734,10 +730,10 @@ Accounting reconciliation, reports, and audit review
 <li>Report an unexpected OTP or password-change email immediately.</li>
 </ul>
 <hr>
-<h2 id="15-system-settings-and-administration">15. System settings and administration</h2>
+<h2>15. System settings and administration</h2>
 <p>Settings requires system-administrator access.</p>
-<p><img alt="System settings" src="screenshots/user-manual/28-settings.png"></p>
-<h3 id="151-user-access-administration">15.1 User access administration</h3>
+<p><img src="screenshots/user-manual/28-settings.png" alt="System settings"></p>
+<h3>15.1 User access administration</h3>
 <ul>
 <li>Create accounts with least privilege.</li>
 <li>Review company assignments and packages regularly.</li>
@@ -745,15 +741,15 @@ Accounting reconciliation, reports, and audit review
 <li>Use Remove only when access must stop permanently; a private four-digit confirmation PIN is also required.</li>
 <li>Never remove the only active group super administrator.</li>
 </ul>
-<h3 id="152-conversion-types-and-rates">15.2 Conversion types and rates</h3>
+<h3>15.2 Conversion types and rates</h3>
 <ul>
 <li>Keep names clear and non-duplicated.</li>
 <li>Use effective dates rather than overwriting history.</li>
 <li>Make old entries inactive or date-limited when replacing them.</li>
 <li>Verify new rates in a controlled conversion before broad use.</li>
 </ul>
-<h3 id="153-company-danger-zone-reset">15.3 Company danger-zone reset</h3>
-<p><strong>Delete all data is irreversible in the application.</strong> It applies to the current company and removes that company's operational position plus all shared conversion rates according to the database procedure.</p>
+<h3>15.3 Company danger-zone reset</h3>
+<p><strong>Delete all data is irreversible in the application.</strong> It applies to the current company and removes that company&#39;s operational position plus all shared conversion rates according to the database procedure.</p>
 <p>Before using it:</p>
 <ol>
 <li>obtain owner/management authorization;</li>
@@ -766,10 +762,10 @@ Accounting reconciliation, reports, and audit review
 <li>tick the irreversible-action acknowledgement; and</li>
 <li>execute once, then verify the empty/reset company.</li>
 </ol>
-<p>The control preserves login accounts, profiles, memberships, capability roles, the activity/audit history, the other company's records, and protected shared master data listed by the dialog. There is no in-app undo.</p>
+<p>The control preserves login accounts, profiles, memberships, capability roles, the activity/audit history, the other company&#39;s records, and protected shared master data listed by the dialog. There is no in-app undo.</p>
 <hr>
-<h2 id="16-corrections-and-reversals">16. Corrections and reversals</h2>
-<h3 id="161-choose-the-correct-action">16.1 Choose the correct action</h3>
+<h2>16. Corrections and reversals</h2>
+<h3>16.1 Choose the correct action</h3>
 <table>
 <thead>
 <tr>
@@ -777,8 +773,7 @@ Accounting reconciliation, reports, and audit review
 <th>Correct approach</th>
 </tr>
 </thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td>Draft has not been posted</td>
 <td>Correct fields before saving</td>
 </tr>
@@ -806,9 +801,8 @@ Accounting reconciliation, reports, and audit review
 <td>User access must stop</td>
 <td>Set Inactive or Remove through Settings</td>
 </tr>
-</tbody>
-</table>
-<h3 id="162-after-every-correctionreversal">16.2 After every correction/reversal</h3>
+</tbody></table>
+<h3>16.2 After every correction/reversal</h3>
 <ol>
 <li>Refresh the source module.</li>
 <li>Verify the status.</li>
@@ -818,8 +812,8 @@ Accounting reconciliation, reports, and audit review
 <li>Verify the activity event and actor.</li>
 </ol>
 <hr>
-<h2 id="17-daily-weekly-monthly-and-year-end-routines">17. Daily, weekly, monthly, and year-end routines</h2>
-<h3 id="171-start-of-day">17.1 Start of day</h3>
+<h2>17. Daily, weekly, monthly, and year-end routines</h2>
+<h3>17.1 Start of day</h3>
 <ol>
 <li>Sign in to the correct company.</li>
 <li>Confirm fiscal year and Live API state.</li>
@@ -827,7 +821,7 @@ Accounting reconciliation, reports, and audit review
 <li>Review open receivables, payables, workforce obligations, and inventory availability.</li>
 <li>Confirm conversion rates and employee status for planned work.</li>
 </ol>
-<h3 id="172-during-the-day">17.2 During the day</h3>
+<h3>17.2 During the day</h3>
 <ol>
 <li>Post purchases on the real date with supplier details.</li>
 <li>Post conversions after measuring input/output and allocating workers.</li>
@@ -838,7 +832,7 @@ Accounting reconciliation, reports, and audit review
 <li>Record daily work and OT on the correct employee/date.</li>
 <li>Correct errors promptly through the source workflow.</li>
 </ol>
-<h3 id="173-end-of-day">17.3 End of day</h3>
+<h3>17.3 End of day</h3>
 <ol>
 <li>Refresh Dashboard.</li>
 <li>Compare production and stock movements with physical records.</li>
@@ -848,7 +842,7 @@ Accounting reconciliation, reports, and audit review
 <li>Resolve warnings or document them for the responsible manager.</li>
 <li>Sign out.</li>
 </ol>
-<h3 id="174-payroll-cycle">17.4 Payroll cycle</h3>
+<h3>17.4 Payroll cycle</h3>
 <ol>
 <li>Close daily work, conversion allocations, and OT for the period.</li>
 <li>Review employee terms and open earnings.</li>
@@ -859,7 +853,7 @@ Accounting reconciliation, reports, and audit review
 <li>Reconcile payroll payable, cash/bank, and paysheets.</li>
 <li>Export the payroll report.</li>
 </ol>
-<h3 id="175-month-end">17.5 Month-end</h3>
+<h3>17.5 Month-end</h3>
 <ol>
 <li>Complete and verify all operational transactions.</li>
 <li>Reconcile physical stock to Inventory.</li>
@@ -870,7 +864,7 @@ Accounting reconciliation, reports, and audit review
 <li>Export financial, inventory, sales, payroll, and audit reports.</li>
 <li>Retain exports according to company/legal policy.</li>
 </ol>
-<h3 id="176-year-end">17.6 Year-end</h3>
+<h3>17.6 Year-end</h3>
 <ol>
 <li>Select the closing fiscal year.</li>
 <li>Ensure all months are complete.</li>
@@ -882,8 +876,8 @@ Accounting reconciliation, reports, and audit review
 <li>Back up and retain records before beginning the new year.</li>
 </ol>
 <hr>
-<h2 id="18-validation-rules-and-error-recovery">18. Validation rules and error recovery</h2>
-<h3 id="181-general-rules">18.1 General rules</h3>
+<h2>18. Validation rules and error recovery</h2>
+<h3>18.1 General rules</h3>
 <ul>
 <li>Required fields are marked with <code>*</code>.</li>
 <li>Quantities, rates, and amounts must normally be positive.</li>
@@ -891,7 +885,7 @@ Accounting reconciliation, reports, and audit review
 <li>Dates must match the real event and, for accounting, the selected fiscal year/open period.</li>
 <li>A disabled Save/Post button usually means required information or an acknowledgement is missing.</li>
 </ul>
-<h3 id="182-if-savepost-fails">18.2 If Save/Post fails</h3>
+<h3>18.2 If Save/Post fails</h3>
 <ol>
 <li>Read the complete error/toast.</li>
 <li>Do not click repeatedly.</li>
@@ -902,10 +896,10 @@ Accounting reconciliation, reports, and audit review
 <li>Retry once after confirming the current state.</li>
 <li>If the problem continues, give an administrator the page, company, time, reference, action, error text, and request ID.</li>
 </ol>
-<h3 id="183-idempotency-and-duplicate-prevention">18.3 Idempotency and duplicate prevention</h3>
+<h3>18.3 Idempotency and duplicate prevention</h3>
 <p>Write operations send idempotency identifiers. This helps prevent a network retry from creating a second copy. Users must still verify the list before manually re-entering a transaction after an unclear response.</p>
 <hr>
-<h2 id="19-security-and-data-handling-rules">19. Security and data-handling rules</h2>
+<h2>19. Security and data-handling rules</h2>
 <ol>
 <li>Use an individual identity for each person.</li>
 <li>Assign least privilege and the minimum companies required.</li>
@@ -919,7 +913,7 @@ Accounting reconciliation, reports, and audit review
 <li>Keep browsers and operating systems supported and updated.</li>
 </ol>
 <hr>
-<h2 id="20-troubleshooting">20. Troubleshooting</h2>
+<h2>20. Troubleshooting</h2>
 <table>
 <thead>
 <tr>
@@ -927,8 +921,7 @@ Accounting reconciliation, reports, and audit review
 <th>Checks and action</th>
 </tr>
 </thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td>Login redirects back to sign-in</td>
 <td>Confirm email/password, correct company portal, active account, active membership, and network</td>
 </tr>
@@ -976,9 +969,8 @@ Accounting reconciliation, reports, and audit review
 <td>Direct link returns hosting 404</td>
 <td>Production must serve SPA fallback for <code>/ck/*</code> and <code>/ar/*</code> routes</td>
 </tr>
-</tbody>
-</table>
-<h3 id="201-information-to-include-in-a-support-report">20.1 Information to include in a support report</h3>
+</tbody></table>
+<h3>20.1 Information to include in a support report</h3>
 <ul>
 <li>company (CK or AR);</li>
 <li>exact page and fiscal year;</li>
@@ -992,7 +984,7 @@ Accounting reconciliation, reports, and audit review
 <li>screenshot with confidential values redacted if needed.</li>
 </ul>
 <hr>
-<h2 id="21-system-verification-report">21. System verification report</h2>
+<h2>21. System verification report</h2>
 <p>The following checks were performed on 24 October 2026 against the checked-in workspace:</p>
 <table>
 <thead>
@@ -1002,8 +994,7 @@ Accounting reconciliation, reports, and audit review
 <th>Result</th>
 </tr>
 </thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td>ESLint</td>
 <td>Frontend TypeScript/React source</td>
 <td>0 errors; 16 warnings</td>
@@ -1014,9 +1005,9 @@ Accounting reconciliation, reports, and audit review
 <td><strong>Passed:</strong> 18 test files, 53 tests</td>
 </tr>
 <tr>
-<td>Pytest</td>
-<td>FastAPI/backend tests</td>
-<td><strong>Passed:</strong> 68 tests</td>
+<td>Vitest</td>
+<td>Node API contract, validation, security, and frontend tests</td>
+<td><strong>Passed:</strong> run <code>npm test</code> for the current total</td>
 </tr>
 <tr>
 <td>TypeScript + Vite build</td>
@@ -1033,10 +1024,9 @@ Accounting reconciliation, reports, and audit review
 <td>Dashboard, invoice dialog, and full Settings page</td>
 <td>Rendered correctly in headless Microsoft Edge</td>
 </tr>
-</tbody>
-</table>
-<p>The 16 lint warnings are non-blocking. Most report React Compiler memoization opt-outs for React Hook Form's <code>watch()</code> API; several are Fast Refresh export warnings; there are also dependency-array warnings in employee workflow effects. They do not fail the build, but they should be reviewed during future maintenance. Vite also reports several generated chunks above 500 kB; this is a performance/optimization warning rather than a correctness failure.</p>
-<h3 id="211-verification-boundary">21.1 Verification boundary</h3>
+</tbody></table>
+<p>The 16 lint warnings are non-blocking. Most report React Compiler memoization opt-outs for React Hook Form&#39;s <code>watch()</code> API; several are Fast Refresh export warnings; there are also dependency-array warnings in employee workflow effects. They do not fail the build, but they should be reviewed during future maintenance. Vite also reports several generated chunks above 500 kB; this is a performance/optimization warning rather than a correctness failure.</p>
+<h3>21.1 Verification boundary</h3>
 <p>Automated tests and isolated UI rendering can verify code paths, validation, contracts, and presentation. They do <strong>not</strong> prove the following external production conditions without authorized live credentials and infrastructure access:</p>
 <ul>
 <li>hosted Supabase migrations exactly match the repository;</li>
@@ -1048,86 +1038,86 @@ Accounting reconciliation, reports, and audit review
 </ul>
 <p>Before go-live, an authorized administrator should complete the production acceptance checklist in the next section using non-destructive sample transactions and then reverse them.</p>
 <hr>
-<h2 id="22-quick-reference-checklists">22. Quick-reference checklists</h2>
-<h3 id="221-go-live-acceptance-checklist">22.1 Go-live acceptance checklist</h3>
+<h2>22. Quick-reference checklists</h2>
+<h3>22.1 Go-live acceptance checklist</h3>
 <ul>
-<li>[ ] Production URL and direct <code>/ck/login</code> and <code>/ar/login</code> links load.</li>
-<li>[ ] <code>/api/v1/health/live</code> succeeds.</li>
-<li>[ ] Public signup is disabled.</li>
-<li>[ ] All migrations are applied in order.</li>
-<li>[ ] Database verification scripts pass in a non-production/staging project.</li>
-<li>[ ] Backend and frontend use the same Supabase project.</li>
-<li>[ ] No secret/service key is exposed in frontend variables or browser code.</li>
-<li>[ ] Super administrators can access both companies.</li>
-<li>[ ] Restricted users see only assigned workspaces.</li>
-<li>[ ] Inactive users are denied.</li>
-<li>[ ] Purchase test changes bulk stock and accounting together.</li>
-<li>[ ] Conversion test changes bulk/chip stock and creates worker earnings.</li>
-<li>[ ] Production test changes chip/finished stock and costing.</li>
-<li>[ ] Sales test changes finished stock, revenue, COGS, and customer balance.</li>
-<li>[ ] Receipt test reduces the customer balance and posts cash/bank.</li>
-<li>[ ] Work/OT test appears once in open earnings and one payroll.</li>
-<li>[ ] Payroll and payment tests post and reconcile.</li>
-<li>[ ] Trial balance is balanced.</li>
-<li>[ ] Reversals retain history and offset effects.</li>
-<li>[ ] Audit export identifies the correct actor/action/company.</li>
-<li>[ ] OTP/recovery and signed-in password change work through production SMTP.</li>
-<li>[ ] Reports print/save as PDF.</li>
-<li>[ ] Backup restoration has been tested.</li>
+<li><input disabled="" type="checkbox"> Production URL and direct <code>/ck/login</code> and <code>/ar/login</code> links load.</li>
+<li><input disabled="" type="checkbox"> <code>/api/v1/health/live</code> succeeds.</li>
+<li><input disabled="" type="checkbox"> Public signup is disabled.</li>
+<li><input disabled="" type="checkbox"> All migrations are applied in order.</li>
+<li><input disabled="" type="checkbox"> Database verification scripts pass in a non-production/staging project.</li>
+<li><input disabled="" type="checkbox"> Backend and frontend use the same Supabase project.</li>
+<li><input disabled="" type="checkbox"> No secret/service key is exposed in frontend variables or browser code.</li>
+<li><input disabled="" type="checkbox"> Super administrators can access both companies.</li>
+<li><input disabled="" type="checkbox"> Restricted users see only assigned workspaces.</li>
+<li><input disabled="" type="checkbox"> Inactive users are denied.</li>
+<li><input disabled="" type="checkbox"> Purchase test changes bulk stock and accounting together.</li>
+<li><input disabled="" type="checkbox"> Conversion test changes bulk/chip stock and creates worker earnings.</li>
+<li><input disabled="" type="checkbox"> Production test changes chip/finished stock and costing.</li>
+<li><input disabled="" type="checkbox"> Sales test changes finished stock, revenue, COGS, and customer balance.</li>
+<li><input disabled="" type="checkbox"> Receipt test reduces the customer balance and posts cash/bank.</li>
+<li><input disabled="" type="checkbox"> Work/OT test appears once in open earnings and one payroll.</li>
+<li><input disabled="" type="checkbox"> Payroll and payment tests post and reconcile.</li>
+<li><input disabled="" type="checkbox"> Trial balance is balanced.</li>
+<li><input disabled="" type="checkbox"> Reversals retain history and offset effects.</li>
+<li><input disabled="" type="checkbox"> Audit export identifies the correct actor/action/company.</li>
+<li><input disabled="" type="checkbox"> OTP/recovery and signed-in password change work through production SMTP.</li>
+<li><input disabled="" type="checkbox"> Reports print/save as PDF.</li>
+<li><input disabled="" type="checkbox"> Backup restoration has been tested.</li>
 </ul>
-<h3 id="222-purchase-checklist">22.2 Purchase checklist</h3>
+<h3>22.2 Purchase checklist</h3>
 <ul>
-<li>[ ] Correct company and date</li>
-<li>[ ] Supplier/reference recorded</li>
-<li>[ ] Material and kg verified</li>
-<li>[ ] Total cost verified</li>
-<li>[ ] Actual payment method selected</li>
-<li>[ ] Bulk inventory verified</li>
-<li>[ ] Accounting entry verified</li>
+<li><input disabled="" type="checkbox"> Correct company and date</li>
+<li><input disabled="" type="checkbox"> Supplier/reference recorded</li>
+<li><input disabled="" type="checkbox"> Material and kg verified</li>
+<li><input disabled="" type="checkbox"> Total cost verified</li>
+<li><input disabled="" type="checkbox"> Actual payment method selected</li>
+<li><input disabled="" type="checkbox"> Bulk inventory verified</li>
+<li><input disabled="" type="checkbox"> Accounting entry verified</li>
 </ul>
-<h3 id="223-conversion-checklist">22.3 Conversion checklist</h3>
+<h3>22.3 Conversion checklist</h3>
 <ul>
-<li>[ ] Correct source bulk item</li>
-<li>[ ] Input measured</li>
-<li>[ ] Output measured and within tolerance</li>
-<li>[ ] Chip name/type correct</li>
-<li>[ ] Every worker selected</li>
-<li>[ ] Task, kg, and rate approved</li>
-<li>[ ] Bulk/chip inventory verified</li>
-<li>[ ] Open earnings verified</li>
+<li><input disabled="" type="checkbox"> Correct source bulk item</li>
+<li><input disabled="" type="checkbox"> Input measured</li>
+<li><input disabled="" type="checkbox"> Output measured and within tolerance</li>
+<li><input disabled="" type="checkbox"> Chip name/type correct</li>
+<li><input disabled="" type="checkbox"> Every worker selected</li>
+<li><input disabled="" type="checkbox"> Task, kg, and rate approved</li>
+<li><input disabled="" type="checkbox"> Bulk/chip inventory verified</li>
+<li><input disabled="" type="checkbox"> Open earnings verified</li>
 </ul>
-<h3 id="224-production-checklist">22.4 Production checklist</h3>
+<h3>22.4 Production checklist</h3>
 <ul>
-<li>[ ] Operator, machine, shift, and date correct</li>
-<li>[ ] Correct chip input and available quantity</li>
-<li>[ ] Existing/new product chosen correctly</li>
-<li>[ ] Selling price approved</li>
-<li>[ ] Output and overhead verified</li>
-<li>[ ] Finished inventory and unit cost verified</li>
+<li><input disabled="" type="checkbox"> Operator, machine, shift, and date correct</li>
+<li><input disabled="" type="checkbox"> Correct chip input and available quantity</li>
+<li><input disabled="" type="checkbox"> Existing/new product chosen correctly</li>
+<li><input disabled="" type="checkbox"> Selling price approved</li>
+<li><input disabled="" type="checkbox"> Output and overhead verified</li>
+<li><input disabled="" type="checkbox"> Finished inventory and unit cost verified</li>
 </ul>
-<h3 id="225-sales-checklist">22.5 Sales checklist</h3>
+<h3>22.5 Sales checklist</h3>
 <ul>
-<li>[ ] Unique invoice number</li>
-<li>[ ] Correct customer and phone</li>
-<li>[ ] Available product selected</li>
-<li>[ ] Quantity, price, and discount approved</li>
-<li>[ ] Initial receipt equals money actually received</li>
-<li>[ ] Balance/status verified</li>
-<li>[ ] Inventory, COGS, revenue, and receivable verified</li>
+<li><input disabled="" type="checkbox"> Unique invoice number</li>
+<li><input disabled="" type="checkbox"> Correct customer and phone</li>
+<li><input disabled="" type="checkbox"> Available product selected</li>
+<li><input disabled="" type="checkbox"> Quantity, price, and discount approved</li>
+<li><input disabled="" type="checkbox"> Initial receipt equals money actually received</li>
+<li><input disabled="" type="checkbox"> Balance/status verified</li>
+<li><input disabled="" type="checkbox"> Inventory, COGS, revenue, and receivable verified</li>
 </ul>
-<h3 id="226-payroll-checklist">22.6 Payroll checklist</h3>
+<h3>22.6 Payroll checklist</h3>
 <ul>
-<li>[ ] Employee and month correct</li>
-<li>[ ] Pay terms effective and approved</li>
-<li>[ ] Work, conversion earnings, and OT reviewed</li>
-<li>[ ] Additions/deductions authorized</li>
-<li>[ ] Employer contributions reviewed</li>
-<li>[ ] Gross, net, and employer cost verified</li>
-<li>[ ] Payment status/method matches reality</li>
-<li>[ ] Paysheet and journal verified</li>
+<li><input disabled="" type="checkbox"> Employee and month correct</li>
+<li><input disabled="" type="checkbox"> Pay terms effective and approved</li>
+<li><input disabled="" type="checkbox"> Work, conversion earnings, and OT reviewed</li>
+<li><input disabled="" type="checkbox"> Additions/deductions authorized</li>
+<li><input disabled="" type="checkbox"> Employer contributions reviewed</li>
+<li><input disabled="" type="checkbox"> Gross, net, and employer cost verified</li>
+<li><input disabled="" type="checkbox"> Payment status/method matches reality</li>
+<li><input disabled="" type="checkbox"> Paysheet and journal verified</li>
 </ul>
 <hr>
-<h2 id="23-glossary">23. Glossary</h2>
+<h2>23. Glossary</h2>
 <table>
 <thead>
 <tr>
@@ -1135,8 +1125,7 @@ Accounting reconciliation, reports, and audit review
 <th>Meaning</th>
 </tr>
 </thead>
-<tbody>
-<tr>
+<tbody><tr>
 <td>Bulk</td>
 <td>Purchased/raw material before conversion</td>
 </tr>
@@ -1196,8 +1185,8 @@ Accounting reconciliation, reports, and audit review
 <td>OTP</td>
 <td>One-time password/code used for recovery or password verification</td>
 </tr>
-</tbody>
-</table>
+</tbody></table>
 <hr>
-<p><strong>End of manual</strong></p></main></body>
+<p><strong>End of manual</strong></p>
+</main></body>
 </html>

@@ -7,11 +7,17 @@ export default tseslint.config(
   { ignores: ['dist', 'coverage', 'legacy-html', 'backend', '.agents'] },
   js.configs.recommended,
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'server/**/*.js', 'api/**/*.js'],
     languageOptions: {
       globals: {
+        AbortSignal: 'readonly',
+        Buffer: 'readonly',
         console: 'readonly',
+        fetch: 'readonly',
+        localStorage: 'readonly',
         process: 'readonly',
+        setTimeout: 'readonly',
+        URL: 'readonly',
       },
     },
   },

@@ -38,7 +38,7 @@ export class ApiError extends Error {
   }
 }
 
-const apiBase = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+const apiBase = (import.meta.env.VITE_API_URL || '/api/v1').trim().replace(/\/$/, '')
 let refreshInFlight: Promise<string | null> | null = null
 let activeCompanyId: string | null = null
 
@@ -59,7 +59,7 @@ export function makeRequestId() {
 }
 
 function buildUrl(path: string, query?: ApiQuery) {
-  if (!apiBase) throw new ApiError('VITE_API_URL is not configured.', 0)
+  if (!apiBase) throw new ApiError('The API URL is not configured.', 0)
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
   const url = new URL(`${apiBase}${normalizedPath}`, window.location.origin)
 

@@ -1,171 +1,147 @@
 # CK SYS V3
 
-CK SYS V3 is the Supabase-backed replacement for the legacy AR Plastic Google Sheets ERP. It is a React application with a Python FastAPI backend and transactional Postgres accounting/inventory logic.
+CK SYS V3 is a single-project React and Node.js ERP for CK Plastics and AR Plastics. The Vite frontend and all 102 Node API routes deploy together on Vercel under one domain. Supabase provides Authentication, PostgreSQL, Row Level Security, Storage, and the transactional ERP functions.
 
-## What is included
+Production: [https://ck-sys-v3.vercel.app](https://ck-sys-v3.vercel.app)
 
-- Supabase Auth with verified ES256 access tokens
-- CK/AR company memberships with database-enforced capability roles
-- Super-admin account creation with Accounting/PDF Studio, Production, Staff & Payroll, Admin, or read-only access packages
-- Super-admin Active/Inactive controls and PIN-confirmed access removal with historical audit identities preserved
-- Company-scoped CK/AR danger-zone purge that removes the selected company's complete operational position plus all shared conversion rates, while preserving every login account, the complete audit history, and the other company's records
-- Dedicated, permission-controlled Activity & audit page with actor/action/entity/date filters, full before/after details, printing, and CSV export
-- Email OTP PIN password recovery and verified password changes
-- Raw-material purchasing, bulk-to-chip conversion, piecework, production, and finished stock
-- Reusable product master with categories, customer descriptions, selling prices, and Supabase Storage images
-- Public customer catalogue and order-request portal that never exposes stock or cost data
-- Customer-order workflow with Pending, Confirmed, In Progress, Ready, Completed, and Cancelled states
-- Invoices, partial receipts, customer balances, and server-calculated COGS
-- Product quotations and payroll paysheets with generated PDF output
-- Employees, daily work, monthly payroll, deductions, employer contributions, and settlements
-- Double-entry journals, ledger, financial dashboard, and reports
-- Row locks, idempotency keys, optimistic protection, append-only reversals, and durable audits
-- Responsive React UI; no Tailwind CDN, inline event handlers, Google Apps Script, or runtime CSV/localStorage database fallback
+## Included features
 
-The previous seven source files are retained only as a read-only reference in `legacy-html/`. They are not served or imported by the new application.
+- CK/AR company portals with database-enforced roles and permissions
+- Supabase Auth sign-in, recovery OTP/link flows, and secure password changes
+- Super-administrator account creation, activation/deactivation, and controlled removal
+- Raw-material purchasing, conversions, piecework, production, and finished stock
+- Product catalogue with Supabase Storage images and public customer order requests
+- Quotations, invoices, partial receipts, balances, and server-calculated COGS
+- Employees, daily targets, overtime, payroll, paysheets, and settlements
+- Double-entry journals, ledger, financial reports, PDF Studio, immutable reversals, and audit history
+- Company-scoped destructive reset with explicit confirmation controls
+- Responsive React interface and Node-based documentation tooling
 
-## Important before deployment
+## Architecture
 
-Rotate any `sb_secret_...` key shared during development. It is privileged and must be treated as compromised. Ordinary requests use the publishable key plus each signed-in user's JWT. The optional in-app **Create account** action requires a rotated `sb_secret_...` key in the backend environment only; it is never sent to React.
+```text
+Vercel project / one public origin
+├── React/Vite frontend (dist/)
+└── Node.js Vercel Function (/api/v1/*)
+    ├── verifies Supabase user JWT claims
+    ├── enforces company access and permissions
+    ├── validates every mutation
+    └── calls user-scoped PostgREST and atomic ERP RPCs
 
-The database API key is not the Postgres password. Apply every checked-in migration through the Supabase SQL Editor or a linked Supabase CLI project before starting the app.
+Supabase project
+├── Authentication
+├── PostgreSQL + Row Level Security
+├── Storage
+└── erp_execute and reporting functions
+```
 
-## 1. Apply the database
+The browser never receives `SUPABASE_SECRET_KEY` and never writes ERP tables directly. Normal requests use the signed-in user's access token, so Postgres RLS remains authoritative. Writes go through the database `erp_execute` transaction boundary with an idempotency key.
 
-Use one of these methods:
+## Prerequisites
+
+- Node.js 22
+- npm
+- A Supabase project with every migration in `supabase/migrations/` applied
+- A Supabase publishable key
+- A rotated server-only `sb_secret_...` key for public catalogue/order RPCs and in-app account creation
+
+## Apply the database
+
+This repository uses ordered imperative migrations. Link the intended Supabase project, then run:
 
 ```bash
-# Supabase CLI v3 targets local by default; explicitly target the linked project.
 npx supabase db push --remote --yes
 ```
 
-The complete ordered schema history is committed under `supabase/migrations/`.
-If the SQL Editor must be used instead, run **every** file in that directory in
-filename order. Do not copy only the newest migration: later migrations depend
-on the earlier security, accounting, inventory, employee, product, quotation,
-and customer-order schema.
+Run the SQL checks in `supabase/tests/` against a non-production project before cutover. Disable public signup in Supabase Auth. Configure custom SMTP and the checked-in `supabase/templates/recovery.html` template when six-digit recovery PIN delivery is required.
 
-Then run every script in `supabase/tests/` in numeric order against a non-production project. The later security migrations reverse the temporary universal-Admin state: ordinary Auth identities remain pending until a super administrator assigns company and capability access.
+## Local setup
 
-Before applying the database, disable public signup in hosted Supabase Auth and review existing users. When their Auth identities exist, `hiranthadiass4@gmail.com` and `info@ck-plastics.com` become group super administrators with Admin access to both CK and AR. Passwords are never stored or changed by SQL; keep them in Supabase Auth.
-
-The linked project now has public signup disabled, six-digit email OTPs, a ten-character minimum password, and **Secure password change** enabled. True PIN delivery also requires the local `supabase/templates/recovery.html` content in the hosted **Reset password** template. Supabase blocks custom templates on free-tier projects that still use its default mail provider, so configure custom production SMTP (or upgrade the project), then push/copy that template. Until then, the standard recovery-link flow remains available. Local development captures PIN emails in Mailpit; run `npx supabase status` to find its URL.
-
-## 2. Configure the Python API
-
-```powershell
-Copy-Item backend/.env.example backend/.env
-python -m venv backend/.venv
-backend/.venv/Scripts/python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
-```
-
-Set these values in `backend/.env`:
+Copy `.env.example` to `.env.local` and set:
 
 ```ini
-SUPABASE_URL=https://khtmogtjyjpekftzkfcr.supabase.co
-SUPABASE_PUBLISHABLE_KEY=sb_publishable_replace_me
-SUPABASE_SECRET_KEY=sb_secret_replace_me
-SUPABASE_JWKS_URL=https://khtmogtjyjpekftzkfcr.supabase.co/auth/v1/.well-known/jwks.json
-CORS_ORIGINS=["http://localhost:5173"]
-```
-
-`SUPABASE_SECRET_KEY` is needed only for super-admin account creation. Keep `backend/.env` out of source control and use a production secret manager. Never use this key in any `VITE_*` variable.
-
-## 3. Configure and run React
-
-The local browser configuration is read from `.env.local`:
-
-```ini
-VITE_SUPABASE_URL=https://khtmogtjyjpekftzkfcr.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_replace_me
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 VITE_API_URL=/api/v1
+
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_SECRET_KEY=sb_secret_...
+SUPABASE_SCHEMA=public
+APP_ENV=development
 ```
 
-Install and start both processes:
+`SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` may be omitted locally because the Node API falls back to their `VITE_*` equivalents. Never create a `VITE_SUPABASE_SECRET_KEY` variable.
+
+Install and start the full application:
 
 ```bash
 npm install
 npm run dev
 ```
 
-`npm run dev` starts both the Python API and Vite, uses `backend/.venv` automatically when it exists, and proxies `/api` to the local API. `npm run dev:all` remains an alias for the same command. Use `npm run dev:web` only when an API is already running separately. For backend-only hot reload, run `npm run dev:api:reload` in a separate terminal.
-
-Open `http://localhost:5173`. API documentation is available at `http://localhost:8000/docs` in development.
-
-`@supabase/supabase-js` and the requested `@supabase/ssr` package are installed. This build is a Vite SPA, so browser authentication uses `supabase-js`; `@supabase/ssr` is retained for a future server-rendered React deployment and is not part of the current auth path. Prisma is intentionally not used because it is a Node ORM; the Python service uses strongly typed Pydantic contracts and transactional Supabase/Postgres RPCs.
-
-## Verification
+Open `http://localhost:5173`. Vite proxies `/api/v1` to the local Node handler on port 8000. Useful commands:
 
 ```bash
-npm run check
+npm run dev:api          # Node API only
+npm run dev:api:reload   # Node API with file watching
+npm run dev:web          # Vite only
+npm run check            # lint, all tests, and production build
+npm run manual:screenshots
+npm run manual:build
 ```
 
-The API pages every collection, supports cursor/keyset traversal for deep datasets, keeps lookup searches server-filtered and debounced, and calculates dashboard/inventory/production totals in Postgres instead of loading whole tables into the browser or Python process.
+## Deploy everything to one Vercel project
 
-Production uses one origin for the React application and Python API. This is
-important: direct links such as `/ck/login`, `/ar/dashboard`, and password-reset
-links are served by the SPA fallback instead of returning a hosting-provider 404.
+The checked-in `vercel.json` does all routing:
 
-### Render (recommended)
+- `/api/v1/*` is routed to the single Node Function in `api/handler.js`.
+- React files are built into `dist/`.
+- Non-API deep links such as `/ck/dashboard`, `/ar/login`, and `/catalog` receive the SPA entry point.
 
-Deploy the repository as the Docker web service defined by `render.yaml` (Render
-Dashboard → **New** → **Blueprint**). Supply these prompted values:
+Create or import one Vercel project from this repository. Add these environment variables for Production and Preview:
 
-- `VITE_SUPABASE_URL` and `SUPABASE_URL`: the same Supabase project URL
-- `VITE_SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_PUBLISHABLE_KEY`: the same
-  `sb_publishable_...` key
-- `SUPABASE_SECRET_KEY`: a rotated server-only `sb_secret_...` key from the same project
+| Variable | Exposure | Required |
+| --- | --- | --- |
+| `VITE_SUPABASE_URL` | Browser build | Yes |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Browser build | Yes |
+| `VITE_API_URL` | Browser build | Set to `/api/v1` or omit; this is the default |
+| `SUPABASE_URL` | Node Function | Recommended; may match `VITE_SUPABASE_URL` |
+| `SUPABASE_PUBLISHABLE_KEY` | Node Function | Recommended; may match the public Vite key |
+| `SUPABASE_SECRET_KEY` | Node Function only | Yes for catalogue/order RPCs and account creation |
+| `SUPABASE_SCHEMA` | Node Function | Optional; defaults to `public` |
+| `APP_ENV` | Node Function | Set to `production` |
 
-The Blueprint passes the two `VITE_*` public values into the Docker frontend
-build and provides the server values to FastAPI at runtime. Keep
-`VITE_API_URL=/api/v1`; the container serves React and FastAPI from one origin.
-No Postgres connection string or database password is required by Render.
+Deploy from the repository root:
 
-The Blueprint now declares `SUPABASE_SECRET_KEY`, so Render prompts for it with
-the other environment values. Never put that secret in a `VITE_*` variable. If you attach a custom
-domain, append its hostname (without `https://`) to `TRUSTED_HOSTS`.
+```bash
+npx vercel
+npx vercel --prod
+```
 
-Render cannot convert an existing **Static Site** into a Docker **Web Service**.
-Create the new `ck-sys-v3-app` Blueprint service, verify it, then move bookmarks
-and any custom domain to it. Keep the old service until that verification passes.
-Afterward, the old two-service/static-site deployment should not remain public.
-The Docker service now serves both the frontend and `/api/v1` on Render's `PORT`,
-so there is no cross-origin or internal-hostname dependency. After deployment,
-verify all of these URLs directly in a private browser window:
+Do not configure a separate backend project, external API URL, Docker service, or CORS origin. Frontend and backend intentionally share the same Vercel origin.
+
+## Post-deployment verification
+
+Verify these direct URLs in a private browser window:
 
 ```text
-https://YOUR-SERVICE.onrender.com/login
-https://YOUR-SERVICE.onrender.com/ck/login
-https://YOUR-SERVICE.onrender.com/ar/login
-https://YOUR-SERVICE.onrender.com/api/v1/health/live
-https://YOUR-SERVICE.onrender.com/api/v1/health/ready
-https://YOUR-SERVICE.onrender.com/catalog
+https://YOUR_DOMAIN/api/v1/health/live
+https://YOUR_DOMAIN/api/v1/health/ready
+https://YOUR_DOMAIN/login
+https://YOUR_DOMAIN/ck/login
+https://YOUR_DOMAIN/ar/login
+https://YOUR_DOMAIN/catalog
 ```
 
-In **Supabase Dashboard → Authentication → Sessions**, keep **Single session per
-user** disabled when the same staff account must work on several devices. The app
-persists a separate browser session per device, and its normal Sign out action now
-ends only the current device's session.
+Then sign in and test both CK and AR company selection, one read screen, one reversible write, file upload, quotation/invoice PDF generation, payroll, accounting reports, audit export, account administration, and password recovery.
 
-### Docker Compose
+## Security notes
 
-Copy `deploy.env.example` to `.env`, set the public values, create
-`backend/.env`, then run:
+- Rotate any secret key ever shared outside a secret manager.
+- Never expose `SUPABASE_SECRET_KEY` through `VITE_*`, source code, logs, screenshots, or browser storage.
+- Keep Supabase RLS enabled and treat UI permission checks as usability only.
+- Posted operational documents are corrected by reversal, not physical edits.
+- Keep the old system read-only until stock, receivables, payables, payroll, and ledger totals reconcile.
 
-```bash
-docker compose up --build -d
-```
-
-The application will be served on `http://localhost:8080` by default.
-
-## Cutover and security
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Security checklist](docs/SECURITY.md)
-- [System workflow and accounting guide](docs/SYSTEM_WORKFLOW.md)
-- [Legacy data cutover](docs/CUTOVER.md)
-
-Do not migrate from the old published CSV: it does not contain the eight ERP tabs. Use a controlled JSON/workbook export and reconcile every stock and ledger balance before switching off legacy writes.
-#   C K - A R - S y s t e m - V 2  
- #   C K - A R - S y s t e m - V 2  
- 
+More detail is available in [Architecture](docs/ARCHITECTURE.md), [Security](docs/SECURITY.md), [System workflow](docs/SYSTEM_WORKFLOW.md), and [Cutover](docs/CUTOVER.md).

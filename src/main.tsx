@@ -30,9 +30,7 @@ const queryClient = new QueryClient({
   },
 })
 
-const apiConfigurationError = !import.meta.env.VITE_API_URL?.trim()
-  ? 'The Python API URL is missing. Set VITE_API_URL.'
-  : null
+const apiConfigurationError = null
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

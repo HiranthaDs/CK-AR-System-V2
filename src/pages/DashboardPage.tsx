@@ -111,7 +111,7 @@ export function DashboardPage() {
       </div>
 
       <Card>
-        <SectionTitle title={`${data.year} posted activity`} description="Counts are calculated in the Python API from Supabase records." />
+        <SectionTitle title={`${data.year} posted activity`} description="Counts are calculated in the Node API from Supabase records." />
         <div className="operation-counts">
           {Object.entries(operations).map(([key, value]) => (
             <div key={key}><span>{key.replaceAll('_', ' ')}</span><strong>{quantity(value, 0)}</strong></div>

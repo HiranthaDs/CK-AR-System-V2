@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertOctagon, BookOpen, Boxes, Copy, Database, ExternalLink, Pencil, Plus, RefreshCw, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
+import { AlertOctagon, BookOpen, Boxes, Copy, Database, ExternalLink, Pencil, Plus, RefreshCw, Save, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { ConversionTypeDialog, PieceworkRateDialog } from '../components/ConversionSetupDialogs'
@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, InlineNotice, Input, LoadingState, PageHeader, SectionTitle, TableWrap } from '../components/UI'
 import { api, ApiError } from '../lib/api'
 import { money, shortDate, titleCase } from '../lib/format'
-import type { AdminUserAccess, ConversionType, InventoryItem, MutationReceipt, PieceworkRate } from '../types/api'
+import type { AdminUserAccess, CompanyProfile, ConversionType, InventoryItem, MutationReceipt, PieceworkRate } from '../types/api'
 import { useAppContext } from '../layout/AppShell'
 
 export const PURGE_CONFIRMATION = 'DELETE ALL BUSINESS DATA'
@@ -202,6 +202,7 @@ export function SettingsPage() {
     role_codes: ['viewer'] as AccessRole[],
     is_super_admin: false,
   })
+  const [companyDraft, setCompanyDraft] = useState<{ address: string; phone: string; email: string; logo_url: string } | null>(null)
   const [createUserErrors, setCreateUserErrors] = useState<Partial<Record<CreateUserField, string>>>({})
   const [createUserSubmissionError, setCreateUserSubmissionError] = useState<string | null>(null)
   const queryClient = useQueryClient()
@@ -220,6 +221,25 @@ export function SettingsPage() {
   const typesQuery = useQuery({
     queryKey: ['conversion-types', 'settings'],
     queryFn: ({ signal }) => api.list<ConversionType>('/conversion-types', { page: 1, page_size: 100, descending: false }, signal),
+  })
+  const companyProfileQuery = useQuery({
+    queryKey: ['company-profile', me.active_company_id],
+    queryFn: ({ signal }) => api.get<CompanyProfile>('/company-profile', undefined, signal),
+  })
+  const effectiveCompanyDraft = companyDraft ?? {
+    address: companyProfileQuery.data?.address ?? '',
+    phone: companyProfileQuery.data?.phone ?? '',
+    email: companyProfileQuery.data?.email ?? '',
+    logo_url: companyProfileQuery.data?.logo_url ?? '',
+  }
+  const companyProfileMutation = useMutation({
+    mutationFn: () => api.patch<MutationReceipt, typeof effectiveCompanyDraft>('/company-profile', effectiveCompanyDraft),
+    onSuccess: async () => {
+      setCompanyDraft(null)
+      await queryClient.invalidateQueries({ queryKey: ['company-profile'] })
+      toast.success('Company invoice details saved', 'New raw-material purchase invoices will use these details automatically.')
+    },
+    onError: (error) => toast.error('Company details were not saved', error instanceof Error ? error.message : 'Try again.'),
   })
   const ratesQuery = useQuery({
     queryKey: ['piecework-rates', 'settings'],
@@ -385,6 +405,21 @@ export function SettingsPage() {
             the acting administrator, and completed as one transaction.
           </p>
         </div>
+      </Card>
+
+      <Card>
+        <SectionTitle
+          title="Company invoice details"
+          description={`These details and the logo populate ${me.active_company_name} raw-material purchase invoices automatically.`}
+          actions={me.permission_codes.includes('system.admin') ? <Button icon={Save} loading={companyProfileMutation.isPending} onClick={() => companyProfileMutation.mutate()}>Save invoice details</Button> : undefined}
+        />
+        {companyProfileQuery.isLoading ? <LoadingState label="Loading company details…" /> : companyProfileQuery.isError ? <ErrorState error={companyProfileQuery.error} onRetry={() => void companyProfileQuery.refetch()} /> : <div className="form-grid form-grid--two">
+          <Field label="Company name"><Input value={companyProfileQuery.data?.name ?? me.active_company_name} readOnly /></Field>
+          <Field label="Phone / WhatsApp"><Input type="tel" value={effectiveCompanyDraft.phone} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, phone: event.target.value })} /></Field>
+          <Field label="Email"><Input type="email" value={effectiveCompanyDraft.email} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, email: event.target.value })} /></Field>
+          <Field label="Logo URL" hint="Use an HTTPS image URL that can be loaded by the browser and PDF exporter."><Input type="url" value={effectiveCompanyDraft.logo_url} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, logo_url: event.target.value })} placeholder="https://…" /></Field>
+          <Field label="Address" className="field--span-2"><textarea className="input textarea" rows={3} value={effectiveCompanyDraft.address} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, address: event.target.value })} /></Field>
+        </div>}
       </Card>
 
       {me.is_super_admin ? (

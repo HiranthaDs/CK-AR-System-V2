@@ -307,6 +307,31 @@ export interface PieceworkRate extends JsonRecord {
   type?: string
 }
 
+export interface BulkRmRate extends JsonRecord {
+  id: Id
+  company_id: Id
+  material_type: string
+  rate_per_kg: Numeric
+  effective_from: string
+  effective_to?: string | null
+  status: 'active' | 'inactive'
+  notes?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CompanyProfile extends JsonRecord {
+  id: Id
+  code: string
+  name: string
+  address?: string | null
+  phone?: string | null
+  email?: string | null
+  logo_url?: string | null
+  is_active: boolean
+  updated_at?: string
+}
+
 export interface ConversionType extends JsonRecord {
   id: Id
   name: string
@@ -317,24 +342,41 @@ export interface ConversionType extends JsonRecord {
   updated_at?: string
 }
 
-export interface RawMaterialPurchase extends JsonRecord {
+export interface RawMaterialPurchaseItem extends JsonRecord {
   id: Id
   reference_no: string
-  purchase_date: string
+  consignment_id?: Id | null
+  line_no?: number | null
   item_id: Id
-  supplier_name?: string | null
-  supplier_phone?: string | null
+  bulk_rm_rate_id?: Id | null
   quantity_kg: Numeric
+  rate_per_kg?: Numeric | null
   total_cost: Numeric
-  unit_cost?: Numeric
-  payment_method?: string
   notes?: string | null
   status: string
-  date?: string
   material_name?: string
   item_name?: string
   qty?: Numeric
   inventory_items?: { name: string; sku?: string | null } | null
+}
+
+export interface RawMaterialPurchase extends JsonRecord {
+  id: Id
+  company_id: Id
+  reference_no: string
+  invoice_no: string
+  purchase_date: string
+  supplier_name?: string | null
+  supplier_phone?: string | null
+  lorry_no?: string | null
+  payment_method: string
+  notes?: string | null
+  grand_total: Numeric
+  status: 'posted' | 'reversed'
+  replaces_id?: Id | null
+  purchase_items: RawMaterialPurchaseItem[]
+  created_at?: string
+  updated_at?: string
 }
 
 export interface ConversionWorker extends JsonRecord {

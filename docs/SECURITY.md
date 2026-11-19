@@ -7,8 +7,8 @@ The Supabase `sb_secret_...` value supplied during development must be rotated i
 ## Key placement
 
 - `VITE_SUPABASE_PUBLISHABLE_KEY` is intentionally public and may be compiled into the React bundle.
-- A user access token is short-lived and is sent as `Authorization: Bearer ...` to FastAPI.
-- `SUPABASE_SECRET_KEY` is used only by the FastAPI account-creation endpoint. It belongs in a server secret manager. Never put it in a `VITE_*`/`NEXT_PUBLIC_*` variable, source file, browser storage, screenshot, or log.
+- A user access token is short-lived and is sent as `Authorization: Bearer ...` to the same-origin Node API.
+- `SUPABASE_SECRET_KEY` is used only by server-side Node routes for public catalogue/order RPCs and account creation. It belongs in Vercel's encrypted environment variables. Never put it in a `VITE_*`/`NEXT_PUBLIC_*` variable, source file, browser storage, screenshot, or log.
 - Supabase API keys are not Postgres passwords. Never place an API key into `DATABASE_URL`.
 
 ## Production checklist
@@ -17,14 +17,14 @@ The Supabase `sb_secret_...` value supplied during development must be rotated i
 2. Disable public signup before applying the database; use controlled invitations or administrator-created identities.
 3. Review every existing Auth identity. Verify that `hiranthadiass4@gmail.com` and `info@ck-plastics.com` are the intended group super-admins; all other users require an explicit company/capability assignment.
 4. Set exact frontend origins in `CORS_ORIGINS` and exact public hostnames in `TRUSTED_HOSTS`; do not use `*` with credentials.
-5. Serve React and FastAPI only through HTTPS.
+5. Serve React and the Node API together through one HTTPS Vercel origin.
 6. Keep JWKS verification pinned to ES256, the exact issuer, and audience `authenticated`.
 7. Test RLS with authenticated and anonymous sessions and verify CK/AR company isolation before importing production data.
 8. Enable Supabase backups and point-in-time recovery appropriate to the business recovery target.
 9. Retain audit events and application logs without recording JWTs, passwords, bank details, or request bodies containing payroll PII.
 10. Review Authentication users, `profiles`, company memberships, and roles regularly. Disabling ERP access does not by itself delete the Auth identity.
 11. Configure custom production SMTP, then set the hosted Reset password template to `{{ .Token }}` so recovery PINs arrive reliably. Supabase blocks custom email-template updates on free-tier projects that use its default mail provider. Secure password change and six-digit OTPs are already enabled on the linked project; the standard recovery link remains the fallback until SMTP is configured.
-12. Test each access package in both portals. Frontend visibility, FastAPI permission checks, Postgres RLS, and RPC authorization must agree.
+12. Test each access package in both portals. Frontend visibility, Node API permission checks, Postgres RLS, and RPC authorization must agree.
 13. Rotate the backend secret key on staff/security changes and never log account-creation request bodies because they contain temporary passwords.
 14. Enable leaked-password protection in Supabase Auth when the project plan supports it; the database advisor currently reports that hosted setting as disabled.
 15. Treat the account-removal PIN only as a second destructive-action confirmation. Account removal is still authorized by the signed-in group-super-admin JWT and enforced again in Postgres. Change the PIN through a reviewed migration if it becomes known outside authorized administrators.

@@ -7,7 +7,7 @@ export function ConfigurationError({ message }: { message: string }) {
         <Settings2 size={34} />
         <strong>Application configuration required</strong>
         <span>{message}</span>
-        <code>VITE_SUPABASE_URL · VITE_SUPABASE_PUBLISHABLE_KEY · VITE_API_URL</code>
+        <code>VITE_SUPABASE_URL · VITE_SUPABASE_PUBLISHABLE_KEY</code>
       </div>
     </main>
   )

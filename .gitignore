@@ -5,7 +5,7 @@ dist/
 coverage/
 *.tsbuildinfo
 
-# Python
+# Legacy Python caches (safe to ignore during migration cleanup)
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -25,3 +25,6 @@ backend/.env
 *.log
 supabase/.temp/
 
+
+.vercel
+.env*
