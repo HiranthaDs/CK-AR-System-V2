@@ -93,15 +93,29 @@ npm run manual:build
 
 ## Future website product API
 
-Company administrators create or rotate the scoped catalogue credential at the very bottom of Settings. The full API key is shown only once; store it in the website server environment, never in browser JavaScript. The website can then request the active product catalogue:
+Company administrators enable the Live Catalog API at the very bottom of Settings and copy the generated public URL. A static or partner website calls Supabase directly, so it needs no separate backend, database, Supabase key, or private API key:
 
-```http
-GET /api/v1/integrations/catalog/products
-X-Catalog-API-ID: <API ID from Settings>
-X-Catalog-API-Key: <API key shown after create/rotate>
+```js
+const response = await fetch('https://PROJECT.supabase.co/functions/v1/website-catalog?catalog_id=CATALOG_ID')
+if (!response.ok) throw new Error('Catalog unavailable')
+const catalog = await response.json()
+
+console.log(catalog.company)
+console.log(catalog.items)
 ```
 
-The versioned response contains product ID, SKU, name, category, one Storage image URL, selling price, and short description. This credential is read-only and cannot call ERP mutation routes.
+The CORS-enabled, versioned response reads the same live Supabase data managed by this admin portal. It contains public company details plus each active product's ID, SKU, name, category, one Storage image URL, selling price, short description, unit, and update time. It never exposes stock, cost, worker, customer, accounting, credential, or write data. Regenerating or disabling the link invalidates the old URL.
+
+See [Website Catalog API](docs/WEBSITE_CATALOG_API.md) for plain HTML and React examples, the response contract, and deployment checks.
+
+The database migration and Supabase-hosted endpoint are deployed once per Supabase project (they are already deployed for the linked CK SYS project):
+
+```bash
+npx supabase@2.122.1 db push --linked
+npx supabase@2.122.1 functions deploy website-catalog --no-verify-jwt --use-api
+```
+
+Partner websites do not run either command. They only use the public URL copied from Settings.
 
 ## Deploy everything to one Vercel project
 

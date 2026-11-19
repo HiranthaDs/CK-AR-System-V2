@@ -2509,6 +2509,8 @@ tbody tr:hover { background: #fafbfe; }
 .catalogue-share-bar small { color: #60779d; }
 .catalog-api-settings { border-color: #cfe0fb; background: linear-gradient(180deg, #fff, #f8fbff); }
 .catalog-api-fields { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.catalog-api-code { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
+.catalog-api-code textarea { min-height: 118px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .82rem; line-height: 1.55; }
 .copy-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .copy-field .input { min-width: 0; font-family: var(--font-mono, monospace); }
 .catalog-api-last-used { color: var(--muted); }
@@ -2688,6 +2690,10 @@ tbody tr:hover { background: #fafbfe; }
   .settings-guide-launcher__copy { flex-basis: calc(100% - 60px); }
   .settings-guide-launcher > .button { width: 100%; }
   .workflow-guide__languages { grid-template-columns: 1fr; }
+  .copy-field,
+  .catalog-api-code { grid-template-columns: 1fr; }
+  .copy-field .button,
+  .catalog-api-code .button { width: 100%; }
   .inventory-detail-summary,
   .audit-detail dl,
   .audit-filter-grid,

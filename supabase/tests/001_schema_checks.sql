@@ -276,6 +276,18 @@ begin
   ) then
     raise exception 'Authenticated users must never read catalogue API key hashes';
   end if;
+  if pg_catalog.to_regprocedure('public.erp_public_website_catalog(uuid)') is null then
+    raise exception 'Missing browser-ready website catalogue function';
+  end if;
+  if pg_catalog.has_function_privilege(
+       'anon', 'public.erp_public_website_catalog(uuid)', 'execute'
+     ) or pg_catalog.has_function_privilege(
+       'authenticated', 'public.erp_public_website_catalog(uuid)', 'execute'
+     ) or not pg_catalog.has_function_privilege(
+       'service_role', 'public.erp_public_website_catalog(uuid)', 'execute'
+     ) then
+    raise exception 'Website catalogue function privileges are unsafe';
+  end if;
   if not exists (
     select 1 from pg_catalog.pg_trigger t
     where t.tgrelid = 'public.catalog_api_credentials'::regclass

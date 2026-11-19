@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
 const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
 
+export const supabaseProjectUrl = (supabaseUrl || 'https://invalid.localhost').replace(/\/$/, '')
+
 export const configurationError =
   !supabaseUrl || !publishableKey
     ? 'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.'
@@ -14,7 +16,7 @@ const noStoreFetch: typeof fetch = (input, init) => fetch(input, {
 })
 
 export const supabase = createClient(
-  supabaseUrl || 'https://invalid.localhost',
+  supabaseProjectUrl,
   publishableKey || 'missing-publishable-key',
   {
     auth: {

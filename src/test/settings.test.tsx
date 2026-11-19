@@ -173,6 +173,41 @@ describe('conversion setup', () => {
 })
 
 describe('super-admin settings', () => {
+  it('shows a browser-ready Supabase catalog URL without requiring a secret key', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    vi.spyOn(api, 'list').mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })
+    vi.spyOn(api, 'get').mockImplementation((path) => Promise.resolve(path === '/catalog-api-credential' ? {
+      credential: {
+        id: '50000000-0000-4000-8000-000000000005',
+        public_id: '40000000-0000-4000-8000-000000000004',
+        key_prefix: 'ckcat_example...',
+        status: 'active',
+        created_at: '2026-11-19T00:00:00Z',
+        updated_at: '2026-11-19T00:00:00Z',
+        rotated_at: '2026-11-19T00:00:00Z',
+      },
+      endpoint: '/api/v1/integrations/catalog/products',
+    } : {
+      id: 'company-ck', code: 'CK', name: 'CK Plastics', address: '', phone: '', email: '', logo_url: '', is_active: true,
+    }))
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/settings']}>
+          <ToastProvider><SettingsPage /></ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    const publicUrl = await screen.findByLabelText<HTMLInputElement>(/Public website data URL/)
+    expect(publicUrl.value).toContain('/functions/v1/website-catalog?catalog_id=')
+    expect(screen.getByLabelText<HTMLTextAreaElement>(/Copy-and-paste JavaScript/).value).toContain('await fetch(')
+    expect(screen.getByText(/no website backend · no secret key/i)).toBeInTheDocument()
+    expect(screen.queryByText('X-Catalog-API-Key')).not.toBeInTheDocument()
+  })
+
   it('loads and displays controlled account management', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

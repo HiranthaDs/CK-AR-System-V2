@@ -8,7 +8,9 @@ import { ProductCards, ProductDialog, type ProductValues } from '../components/P
 import { useToast } from '../components/Toast'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, InlineNotice, Input, LoadingState, PageHeader, SectionTitle, TableWrap } from '../components/UI'
 import { api, ApiError } from '../lib/api'
+import { buildWebsiteCatalogSnippet, buildWebsiteCatalogUrl } from '../lib/catalogApi'
 import { money, shortDate, titleCase } from '../lib/format'
+import { supabaseProjectUrl } from '../lib/supabase'
 import type { AdminUserAccess, CatalogApiCredentialResponse, CatalogApiKeyReceipt, CompanyProfile, ConversionType, InventoryItem, MutationReceipt, PieceworkRate } from '../types/api'
 import { useAppContext } from '../layout/AppShell'
 
@@ -190,7 +192,7 @@ export function SettingsPage() {
   const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
   const [reversingProduct, setReversingProduct] = useState<InventoryItem | null>(null)
   const [catalogAction, setCatalogAction] = useState<{ companyId: string; action: 'rotate' | 'revoke' } | null>(null)
-  const [newCatalogKey, setNewCatalogKey] = useState<{ companyId: string; apiId: string; apiKey: string } | null>(null)
+  const [newCatalogLink, setNewCatalogLink] = useState<{ companyId: string; apiId: string } | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
   const [createUserOpen, setCreateUserOpen] = useState(false)
@@ -303,21 +305,21 @@ export function SettingsPage() {
     mutationFn: () => api.post<CatalogApiKeyReceipt, Record<string, never>>('/catalog-api-credential/rotate', {}),
     onSuccess: async (result) => {
       setCatalogAction(null)
-      setNewCatalogKey({ companyId: me.active_company_id, apiId: result.api_id, apiKey: result.api_key })
+      setNewCatalogLink({ companyId: me.active_company_id, apiId: result.api_id })
       await queryClient.invalidateQueries({ queryKey: ['catalog-api-credential'] })
-      toast.success('Catalogue API key ready', 'Copy the full key now. For security, it is shown only in this browser session.')
+      toast.success('Live website API ready', 'Copy the public URL or JavaScript example into any website. No website backend or secret key is required.')
     },
-    onError: (error) => toast.error('Catalogue API key was not created', error instanceof Error ? error.message : 'Try again.'),
+    onError: (error) => toast.error('Website API link was not created', error instanceof Error ? error.message : 'Try again.'),
   })
   const revokeCatalogKeyMutation = useMutation({
     mutationFn: () => api.delete<MutationReceipt>('/catalog-api-credential'),
     onSuccess: async () => {
       setCatalogAction(null)
-      setNewCatalogKey(null)
+      setNewCatalogLink(null)
       await queryClient.invalidateQueries({ queryKey: ['catalog-api-credential'] })
-      toast.success('Catalogue API key revoked', 'The future website endpoint will reject this credential immediately.')
+      toast.success('Website API disabled', 'The shared URL will stop returning catalogue data immediately.')
     },
-    onError: (error) => toast.error('Catalogue API key was not revoked', error instanceof Error ? error.message : 'Try again.'),
+    onError: (error) => toast.error('Website API was not disabled', error instanceof Error ? error.message : 'Try again.'),
   })
 
   const submitNewUser = () => {
@@ -408,9 +410,11 @@ export function SettingsPage() {
   const catalogueLink = `${window.location.origin}/catalog`
   const catalogCredential = catalogCredentialQuery.data?.credential ?? null
   const activeCatalogAction = catalogAction?.companyId === me.active_company_id ? catalogAction.action : null
-  const activeNewCatalogKey = newCatalogKey?.companyId === me.active_company_id ? newCatalogKey : null
-  const catalogApiEndpoint = `${window.location.origin}${catalogCredentialQuery.data?.endpoint ?? '/api/v1/integrations/catalog/products'}`
-  const visibleCatalogApiId = activeNewCatalogKey?.apiId ?? catalogCredential?.public_id ?? ''
+  const activeNewCatalogLink = newCatalogLink?.companyId === me.active_company_id ? newCatalogLink : null
+  const visibleCatalogApiId = activeNewCatalogLink?.apiId
+    ?? (catalogCredential?.status === 'active' ? catalogCredential.public_id : '')
+  const websiteCatalogApiUrl = buildWebsiteCatalogUrl(supabaseProjectUrl, visibleCatalogApiId)
+  const websiteCatalogSnippet = buildWebsiteCatalogSnippet(websiteCatalogApiUrl)
   const copySettingValue = async (label: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value)
@@ -582,26 +586,27 @@ export function SettingsPage() {
 
       {me.permission_codes.includes('system.admin') ? <Card className="catalog-api-settings">
         <SectionTitle
-          title="Future website · Product Catalog API"
-          description="Use this read-only integration to show active products, one image, the short description, category, SKU, and selling price on a future website."
+          title="Future & partner websites · Live Catalog API"
+          description="Connect any static website directly to the same Supabase catalogue. Changes made in this admin portal appear automatically without maintaining another database or website backend."
           actions={<Badge tone={catalogCredential?.status === 'active' ? 'success' : 'neutral'}>{catalogCredential?.status === 'active' ? 'Active' : catalogCredential?.status === 'revoked' ? 'Revoked' : 'Not created'}</Badge>}
         />
         {catalogCredentialQuery.isLoading ? <LoadingState label="Loading catalogue API settings…" /> : catalogCredentialQuery.isError ? <ErrorState error={catalogCredentialQuery.error} onRetry={() => void catalogCredentialQuery.refetch()} /> : <div className="form-stack">
-          <InlineNotice title="Safe website integration">
-            Send the API ID and API key as request headers. The key can read the product catalogue only; it is not a Supabase key and cannot edit ERP data.
+          <InlineNotice tone="success" title="One public link · no website backend · no secret key">
+            Use a normal browser fetch request. The response includes public company details and every active product&apos;s ID, SKU, name, category, image, price, description, unit, and update time. It never includes stock quantities, costs, staff, accounting, customers, or write access.
           </InlineNotice>
-          {activeNewCatalogKey ? <InlineNotice tone="warning" title="Copy the full API key now">
-            The complete key is shown only after creation or rotation. Store it in the future website&apos;s server-side environment settings, then close this page.
-          </InlineNotice> : null}
+          <InlineNotice tone="warning" title="This catalogue URL is intentionally public">
+            Anyone who has the link can read the published product catalogue and company contact details. Disable it below if a partner should no longer have access.
+          </InlineNotice>
           <div className="catalog-api-fields">
-            <Field label="Catalog API endpoint" hint="GET request"><div className="copy-field"><Input value={catalogApiEndpoint} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} onClick={() => void copySettingValue('Endpoint', catalogApiEndpoint)}>Copy</Button></div></Field>
-            <Field label="API ID" hint="Send as X-Catalog-API-ID"><div className="copy-field"><Input value={visibleCatalogApiId || 'Create a key to generate the API ID'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!visibleCatalogApiId} onClick={() => void copySettingValue('API ID', visibleCatalogApiId)}>Copy</Button></div></Field>
-            <Field label="API key" hint="Send as X-Catalog-API-Key"><div className="copy-field"><Input type={activeNewCatalogKey ? 'text' : 'password'} value={activeNewCatalogKey?.apiKey ?? (catalogCredential ? `${catalogCredential.key_prefix}••••••••••••` : 'Create a key to begin')} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!activeNewCatalogKey} onClick={() => { if (activeNewCatalogKey) void copySettingValue('API key', activeNewCatalogKey.apiKey) }}>Copy</Button></div></Field>
+            <Field label="Public website data URL" hint="GET · works from plain HTML, React, Next.js, WordPress, Shopify custom code, and other browser websites"><div className="copy-field"><Input value={websiteCatalogApiUrl || 'Enable the website API to create the link'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!websiteCatalogApiUrl} onClick={() => void copySettingValue('Website API URL', websiteCatalogApiUrl)}>Copy URL</Button></div></Field>
+            <Field label="Catalog ID" hint="Already included in the URL; no request header is needed"><div className="copy-field"><Input value={visibleCatalogApiId || 'Created automatically'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!visibleCatalogApiId} onClick={() => void copySettingValue('Catalog ID', visibleCatalogApiId)}>Copy ID</Button></div></Field>
+            <Field label="Copy-and-paste JavaScript" hint="Paste this into the partner website and render catalog.company and catalog.items"><div className="catalog-api-code"><textarea className="input textarea" rows={5} value={websiteCatalogSnippet || '// Enable the website API to generate the code'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!websiteCatalogSnippet} onClick={() => void copySettingValue('JavaScript example', websiteCatalogSnippet)}>Copy code</Button></div></Field>
           </div>
-          {catalogCredential?.last_used_at ? <small className="catalog-api-last-used">Last used {shortDate(catalogCredential.last_used_at)} · Last rotated {shortDate(catalogCredential.rotated_at)}</small> : catalogCredential ? <small className="catalog-api-last-used">This key has not been used yet · Last rotated {shortDate(catalogCredential.rotated_at)}</small> : null}
+          {catalogCredential ? <small className="catalog-api-last-used">Public link created or regenerated {shortDate(catalogCredential.rotated_at)}. Product changes use the same link automatically.</small> : null}
           <div className="row-actions">
-            <Button icon={catalogCredential ? RefreshCw : KeyRound} loading={rotateCatalogKeyMutation.isPending} onClick={() => catalogCredential?.status === 'active' ? setCatalogAction({ companyId: me.active_company_id, action: 'rotate' }) : rotateCatalogKeyMutation.mutate()}>{catalogCredential?.status === 'active' ? 'Rotate API key' : 'Create API key'}</Button>
-            {catalogCredential?.status === 'active' ? <Button variant="danger" icon={Trash2} disabled={rotateCatalogKeyMutation.isPending} onClick={() => setCatalogAction({ companyId: me.active_company_id, action: 'revoke' })}>Revoke key</Button> : null}
+            <Button icon={catalogCredential?.status === 'active' ? RefreshCw : KeyRound} loading={rotateCatalogKeyMutation.isPending} onClick={() => catalogCredential?.status === 'active' ? setCatalogAction({ companyId: me.active_company_id, action: 'rotate' }) : rotateCatalogKeyMutation.mutate()}>{catalogCredential?.status === 'active' ? 'Regenerate public link' : 'Enable website API'}</Button>
+            {websiteCatalogApiUrl ? <a className="button button--secondary" href={websiteCatalogApiUrl} target="_blank" rel="noreferrer"><ExternalLink size={17} /> Test live data</a> : null}
+            {catalogCredential?.status === 'active' ? <Button variant="danger" icon={Trash2} disabled={rotateCatalogKeyMutation.isPending} onClick={() => setCatalogAction({ companyId: me.active_company_id, action: 'revoke' })}>Disable website API</Button> : null}
           </div>
         </div>}
       </Card> : null}
@@ -771,11 +776,11 @@ export function SettingsPage() {
       {productOpen ? <ProductDialog open record={editingProduct} mutation={productMutation} onClose={() => { setProductOpen(false); setEditingProduct(null) }} /> : null}
       <ConfirmDialog
         open={activeCatalogAction !== null}
-        title={activeCatalogAction === 'revoke' ? 'Revoke the website API key?' : 'Rotate the website API key?'}
+        title={activeCatalogAction === 'revoke' ? 'Disable the public website API?' : 'Regenerate the public website link?'}
         message={activeCatalogAction === 'revoke'
-          ? 'The current future-website connection will stop immediately. You can create a new key later.'
-          : 'The current API key will stop working immediately. Copy the replacement key and update the future website before its next request.'}
-        confirmLabel={activeCatalogAction === 'revoke' ? 'Revoke key' : 'Rotate key'}
+          ? 'The current link will stop returning product data immediately. You can enable a new link later.'
+          : 'The current link will stop working immediately. You must copy the replacement URL into every connected website.'}
+        confirmLabel={activeCatalogAction === 'revoke' ? 'Disable API' : 'Regenerate link'}
         destructive
         busy={rotateCatalogKeyMutation.isPending || revokeCatalogKeyMutation.isPending}
         onCancel={() => setCatalogAction(null)}

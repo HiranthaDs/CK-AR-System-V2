@@ -387,6 +387,12 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
+# Public, read-only product catalogue for static and partner websites. The
+# function validates a revocable catalogue share id and never exposes ERP
+# credentials, private tables, stock costs, or write operations.
+[functions.website-catalog]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
