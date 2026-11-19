@@ -178,7 +178,7 @@ function setCorsHeaders(request, response, config) {
   response.setHeader('Vary', 'Origin')
   response.setHeader('Access-Control-Allow-Credentials', 'true')
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS')
-  response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key, X-Company-ID, X-Request-ID, Cache-Control, Pragma')
+  response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key, X-Company-ID, X-Request-ID, X-Catalog-API-ID, X-Catalog-API-Key, Cache-Control, Pragma')
   response.setHeader('Access-Control-Expose-Headers', 'X-Request-ID')
   response.setHeader('Access-Control-Max-Age', '600')
 }

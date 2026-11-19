@@ -41,7 +41,7 @@ begin
     'company_memberships', 'company_user_roles',
     'company_inventory_balances', 'fiscal_periods',
     'inventory_ownership_transfers', 'employees', 'employee_compensation_history',
-    'conversion_types', 'piecework_rates', 'bulk_rm_rates', 'inventory_items',
+    'conversion_types', 'piecework_rates', 'bulk_rm_rates', 'catalog_api_credentials', 'inventory_items',
     'raw_material_purchase_consignments', 'raw_material_purchases', 'conversions', 'conversion_workers',
     'daily_work', 'daily_work_piecework', 'overtime_entries',
     'payroll_overtime_claims', 'overtime_work_view', 'production_runs', 'sales',

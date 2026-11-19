@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
 import { z } from 'zod/v3'
 import { Button, EmptyState, ErrorState, Field, Input, LoadingState, Textarea } from '../components/UI'
+import { Dialog } from '../components/Dialog'
 import { makeRequestId, publicApi } from '../lib/api'
 import { money, numberValue } from '../lib/format'
 import type { PublicCatalogItem, PublicOrderReceipt } from '../types/api'
@@ -28,6 +29,7 @@ export function PublicCatalogPage() {
   const [category, setCategory] = useState('All')
   const [cart, setCart] = useState<Cart>({})
   const [receipt, setReceipt] = useState<PublicOrderReceipt | null>(null)
+  const [selectedProduct, setSelectedProduct] = useState<PublicCatalogItem | null>(null)
   const [requestKey, setRequestKey] = useState(() => makeRequestId())
   const form = useForm<OrderValues>({
     resolver: zodResolver(orderSchema),
@@ -38,7 +40,7 @@ export function PublicCatalogPage() {
     queryFn: ({ signal }) => publicApi.get<CatalogResponse>('/public/catalog', undefined, signal),
     staleTime: 60_000,
   })
-  const products = catalogQuery.data?.items ?? []
+  const products = useMemo(() => catalogQuery.data?.items ?? [], [catalogQuery.data?.items])
   const categories = useMemo(() => ['All', ...new Set(products.map((product) => product.category))], [products])
   const visible = products.filter((product) => {
     const term = search.trim().toLowerCase()
@@ -101,7 +103,7 @@ export function PublicCatalogPage() {
           {catalogQuery.isLoading ? <LoadingState label="Loading products…" /> : catalogQuery.isError ? <ErrorState error={catalogQuery.error} onRetry={() => void catalogQuery.refetch()} /> : visible.length ? <div className="catalog-product-grid">{visible.map((product) => {
             const quantity = cart[product.id] ?? 0
             return <article className="catalog-product-card" key={product.id}>
-              <div className="catalog-product-card__image">{product.image_url ? <img src={product.image_url} alt={product.name} loading="lazy" /> : <PackageOpen size={40} aria-hidden="true" />}</div>
+              <button type="button" className="catalog-product-card__image" onClick={() => setSelectedProduct(product)} aria-label={`View ${product.name} details`}>{product.image_url ? <img src={product.image_url} alt={product.name} loading="lazy" /> : <PackageOpen size={40} aria-hidden="true" />}<span>View details</span></button>
               <div className="catalog-product-card__body"><span>{product.category}</span><h2>{product.name}</h2><p>{product.description || 'Contact us for product specifications and available options.'}</p><div className="catalog-product-card__footer"><strong>{money(product.selling_price)}</strong>{quantity ? <div className="quantity-stepper"><button type="button" onClick={() => updateQuantity(product.id, quantity - 1)} aria-label={`Remove one ${product.name}`}><Minus size={15} /></button><span>{quantity}</span><button type="button" onClick={() => updateQuantity(product.id, quantity + 1)} aria-label={`Add one ${product.name}`}><Plus size={15} /></button></div> : <Button size="small" icon={Plus} onClick={() => updateQuantity(product.id, 1)}>Add</Button>}</div></div>
             </article>
           })}</div> : <EmptyState message="No products match this search." />}
@@ -127,6 +129,19 @@ export function PublicCatalogPage() {
         </aside>
       </section>
     </main>
+    <Dialog
+      open={Boolean(selectedProduct)}
+      onClose={() => setSelectedProduct(null)}
+      title={selectedProduct?.name ?? 'Product details'}
+      description={selectedProduct?.category}
+      size="wide"
+      footer={selectedProduct ? <><strong className="catalog-product-detail__price">{money(selectedProduct.selling_price)}</strong><Button icon={Plus} onClick={() => { updateQuantity(selectedProduct.id, (cart[selectedProduct.id] ?? 0) + 1); setSelectedProduct(null) }}>Add to order</Button></> : undefined}
+    >
+      {selectedProduct ? <div className="catalog-product-detail">
+        <div className="catalog-product-detail__image">{selectedProduct.image_url ? <img src={selectedProduct.image_url} alt={selectedProduct.name} /> : <PackageOpen size={58} aria-hidden="true" />}</div>
+        <div><span className="catalog-kicker">{selectedProduct.category}</span><p>{selectedProduct.description || 'Contact us for product specifications and available options.'}</p>{selectedProduct.sku ? <small>Product code: <strong>{selectedProduct.sku}</strong></small> : null}</div>
+      </div> : null}
+    </Dialog>
     <footer className="catalog-footer"><strong>CK Plastics</strong><span>Product catalogue and customer ordering</span></footer>
   </div>
 }

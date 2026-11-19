@@ -9,7 +9,7 @@ const USER_ID = '00000000-0000-4000-8000-000000000001'
 
 const config = {
   appName: 'CK SYS ERP API', appVersion: '3.0.0', appEnv: 'test', production: false,
-  maxPageSize: 100, defaultPageSize: 25, corsOrigins: [],
+  maxPageSize: 100, defaultPageSize: 25, corsOrigins: [], secretKey: 'test-service-secret',
 }
 
 function profile() {
@@ -35,6 +35,12 @@ describe('Node API handler', () => {
         year: year || 2026, company_id: options.companyId, inventory: {}, finance: {}, workforce: {}, operations: {}, generated_at: '2026-01-01T00:00:00Z',
       })),
       execute: vi.fn(async (operation, payload) => ({ ok: true, operation, id: payload.id || null })),
+      verifyCatalogCredential: vi.fn(async () => COMPANY_ID),
+      publicCatalog: vi.fn(async () => [{
+        id: '00000000-0000-4000-8000-000000000003', sku: 'PRD-1', name: 'Frame stand',
+        category: 'Frame Stand', image_url: 'https://example.com/frame.webp', selling_price: 1200,
+        description: 'A strong display stand.',
+      }]),
     }
     server = createServer(createHandler({ config, gateway }))
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -84,5 +90,39 @@ describe('Node API handler', () => {
     const response = await fetch(`${origin}/api/v1/not-a-route`, { headers: auth() })
     expect(response.status).toBe(404)
     expect((await response.json()).code).toBe('http_error')
+  })
+
+  it('protects the external catalogue with scoped API headers', async () => {
+    const missing = await fetch(`${origin}/api/v1/integrations/catalog/products`)
+    expect(missing.status).toBe(401)
+
+    const apiId = '40000000-0000-4000-8000-000000000004'
+    const apiKey = `ckcat_${'a'.repeat(43)}`
+    const accepted = await fetch(`${origin}/api/v1/integrations/catalog/products`, {
+      headers: { 'X-Catalog-API-ID': apiId, 'X-Catalog-API-Key': apiKey },
+    })
+    expect(accepted.status).toBe(200)
+    expect(await accepted.json()).toEqual(expect.objectContaining({
+      api_version: '1.0', catalog_id: apiId,
+      items: [expect.objectContaining({ name: 'Frame stand', image_url: 'https://example.com/frame.webp' })],
+    }))
+    expect(gateway.verifyCatalogCredential).toHaveBeenCalledWith(apiId, apiKey, expect.any(String))
+  })
+
+  it('returns a website API key once and stores only its hash', async () => {
+    const response = await fetch(`${origin}/api/v1/catalog-api-credential/rotate`, {
+      method: 'POST', headers: auth({ 'Content-Type': 'application/json', 'Idempotency-Key': 'catalog-rotate-0001' }),
+      body: '{}',
+    })
+    expect(response.status).toBe(201)
+    const result = await response.json()
+    expect(result.api_id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(result.api_key).toMatch(/^ckcat_[A-Za-z0-9_-]{43}$/)
+    expect(gateway.execute).toHaveBeenCalledWith(
+      'catalog_api_credential.rotate',
+      expect.objectContaining({ public_id: result.api_id, secret_hash: expect.stringMatching(/^[0-9a-f]{64}$/) }),
+      'catalog-rotate-0001', expect.objectContaining({ companyId: COMPANY_ID }),
+    )
+    expect(JSON.stringify(gateway.execute.mock.calls.at(-1)?.[1])).not.toContain(result.api_key)
   })
 })

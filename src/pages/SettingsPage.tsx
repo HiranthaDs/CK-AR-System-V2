@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertOctagon, BookOpen, Boxes, Copy, Database, ExternalLink, Pencil, Plus, RefreshCw, Save, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
+import { AlertOctagon, BookOpen, Boxes, Copy, Database, ExternalLink, KeyRound, Pencil, Plus, RefreshCw, Save, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { ConversionTypeDialog, PieceworkRateDialog } from '../components/ConversionSetupDialogs'
@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, InlineNotice, Input, LoadingState, PageHeader, SectionTitle, TableWrap } from '../components/UI'
 import { api, ApiError } from '../lib/api'
 import { money, shortDate, titleCase } from '../lib/format'
-import type { AdminUserAccess, CompanyProfile, ConversionType, InventoryItem, MutationReceipt, PieceworkRate } from '../types/api'
+import type { AdminUserAccess, CatalogApiCredentialResponse, CatalogApiKeyReceipt, CompanyProfile, ConversionType, InventoryItem, MutationReceipt, PieceworkRate } from '../types/api'
 import { useAppContext } from '../layout/AppShell'
 
 export const PURGE_CONFIRMATION = 'DELETE ALL BUSINESS DATA'
@@ -172,7 +172,7 @@ const workflowGuideSteps = [
   {
     englishTitle: 'Review accounting and finish safely',
     path: '/accounting',
-    englishBody: 'Use Accounting to review automatic entries, ledgers, reports, and PDF Studio. In Quick double-entry, manually type the real Method plus exact Primary and Offset account codes; the Offset must be the CASH/BANK asset that moved. Never bypass receivable, payable, inventory, payroll, tax, or intercompany workflows. Read each Info button, reconcile the ledger, review the Dashboard, and sign out.',
+    englishBody: 'Use Accounting to review automatic entries, ledgers, reports, and PDF Studio. Quick double-entry remains the safest option for normal cash and bank entries. The Universal journal can use any chart account for a genuine correction; review the protected-account warning, verify the supporting records, and confirm before saving. Every journal must balance. Reconcile the ledger, review the Dashboard, and sign out.',
     sinhalaTitle: 'ගිණුම් පරීක්ෂා කර ආරක්ෂිතව අවසන් කරන්න',
     sinhalaBody: 'ස්වයංක්‍රීයව සටහන් වූ ගනුදෙනු, ලෙජර සහ වාර්තා පරීක්ෂා කිරීමට Accounting භාවිතා කරන්න. සැබෑ ගැලපීමක් සඳහා පමණක් අතින් ජර්නල් සටහනක් එක් කරන්න. දවස අවසානයේ Dashboard පරීක්ෂා කර අනතුරු ඇඟවීම් විසඳා පද්ධතියෙන් ඉවත් වන්න.',
   },
@@ -189,6 +189,8 @@ export function SettingsPage() {
   const [productOpen, setProductOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
   const [reversingProduct, setReversingProduct] = useState<InventoryItem | null>(null)
+  const [catalogAction, setCatalogAction] = useState<{ companyId: string; action: 'rotate' | 'revoke' } | null>(null)
+  const [newCatalogKey, setNewCatalogKey] = useState<{ companyId: string; apiId: string; apiKey: string } | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
   const [createUserOpen, setCreateUserOpen] = useState(false)
@@ -249,6 +251,11 @@ export function SettingsPage() {
     queryKey: ['products', 'settings'],
     queryFn: ({ signal }) => api.list<InventoryItem>('/products', { page: 1, page_size: 100, descending: false }, signal),
   })
+  const catalogCredentialQuery = useQuery({
+    queryKey: ['catalog-api-credential', me.active_company_id],
+    queryFn: ({ signal }) => api.get<CatalogApiCredentialResponse>('/catalog-api-credential', undefined, signal),
+    enabled: me.permission_codes.includes('system.admin'),
+  })
   const usersQuery = useQuery({
     queryKey: ['admin-users', me.active_company_id],
     queryFn: ({ signal }) => api.list<AdminUserAccess>('/admin/users', { page: 1, page_size: 100 }, signal),
@@ -291,6 +298,26 @@ export function SettingsPage() {
       toast.success('Product reversed', 'It is hidden from the customer catalogue and new transactions.')
     },
     onError: (error) => toast.error('Product could not be reversed', error instanceof Error ? error.message : 'Try again.'),
+  })
+  const rotateCatalogKeyMutation = useMutation({
+    mutationFn: () => api.post<CatalogApiKeyReceipt, Record<string, never>>('/catalog-api-credential/rotate', {}),
+    onSuccess: async (result) => {
+      setCatalogAction(null)
+      setNewCatalogKey({ companyId: me.active_company_id, apiId: result.api_id, apiKey: result.api_key })
+      await queryClient.invalidateQueries({ queryKey: ['catalog-api-credential'] })
+      toast.success('Catalogue API key ready', 'Copy the full key now. For security, it is shown only in this browser session.')
+    },
+    onError: (error) => toast.error('Catalogue API key was not created', error instanceof Error ? error.message : 'Try again.'),
+  })
+  const revokeCatalogKeyMutation = useMutation({
+    mutationFn: () => api.delete<MutationReceipt>('/catalog-api-credential'),
+    onSuccess: async () => {
+      setCatalogAction(null)
+      setNewCatalogKey(null)
+      await queryClient.invalidateQueries({ queryKey: ['catalog-api-credential'] })
+      toast.success('Catalogue API key revoked', 'The future website endpoint will reject this credential immediately.')
+    },
+    onError: (error) => toast.error('Catalogue API key was not revoked', error instanceof Error ? error.message : 'Try again.'),
   })
 
   const submitNewUser = () => {
@@ -379,6 +406,19 @@ export function SettingsPage() {
   const closeTypeDialog = () => { setTypeDialogOpen(false); setEditingType(null) }
   const closeRateDialog = () => { setRateDialogOpen(false); setEditingRate(null) }
   const catalogueLink = `${window.location.origin}/catalog`
+  const catalogCredential = catalogCredentialQuery.data?.credential ?? null
+  const activeCatalogAction = catalogAction?.companyId === me.active_company_id ? catalogAction.action : null
+  const activeNewCatalogKey = newCatalogKey?.companyId === me.active_company_id ? newCatalogKey : null
+  const catalogApiEndpoint = `${window.location.origin}${catalogCredentialQuery.data?.endpoint ?? '/api/v1/integrations/catalog/products'}`
+  const visibleCatalogApiId = activeNewCatalogKey?.apiId ?? catalogCredential?.public_id ?? ''
+  const copySettingValue = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(`${label} copied`, 'It is ready to paste into the website configuration.')
+    } catch {
+      toast.error(`${label} was not copied`, 'Select the value and copy it manually.')
+    }
+  }
   const copyCatalogueLink = async () => {
     try {
       await navigator.clipboard.writeText(catalogueLink)
@@ -538,6 +578,32 @@ export function SettingsPage() {
             Delete all data
           </Button>
         </div>
+      </Card> : null}
+
+      {me.permission_codes.includes('system.admin') ? <Card className="catalog-api-settings">
+        <SectionTitle
+          title="Future website · Product Catalog API"
+          description="Use this read-only integration to show active products, one image, the short description, category, SKU, and selling price on a future website."
+          actions={<Badge tone={catalogCredential?.status === 'active' ? 'success' : 'neutral'}>{catalogCredential?.status === 'active' ? 'Active' : catalogCredential?.status === 'revoked' ? 'Revoked' : 'Not created'}</Badge>}
+        />
+        {catalogCredentialQuery.isLoading ? <LoadingState label="Loading catalogue API settings…" /> : catalogCredentialQuery.isError ? <ErrorState error={catalogCredentialQuery.error} onRetry={() => void catalogCredentialQuery.refetch()} /> : <div className="form-stack">
+          <InlineNotice title="Safe website integration">
+            Send the API ID and API key as request headers. The key can read the product catalogue only; it is not a Supabase key and cannot edit ERP data.
+          </InlineNotice>
+          {activeNewCatalogKey ? <InlineNotice tone="warning" title="Copy the full API key now">
+            The complete key is shown only after creation or rotation. Store it in the future website&apos;s server-side environment settings, then close this page.
+          </InlineNotice> : null}
+          <div className="catalog-api-fields">
+            <Field label="Catalog API endpoint" hint="GET request"><div className="copy-field"><Input value={catalogApiEndpoint} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} onClick={() => void copySettingValue('Endpoint', catalogApiEndpoint)}>Copy</Button></div></Field>
+            <Field label="API ID" hint="Send as X-Catalog-API-ID"><div className="copy-field"><Input value={visibleCatalogApiId || 'Create a key to generate the API ID'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!visibleCatalogApiId} onClick={() => void copySettingValue('API ID', visibleCatalogApiId)}>Copy</Button></div></Field>
+            <Field label="API key" hint="Send as X-Catalog-API-Key"><div className="copy-field"><Input type={activeNewCatalogKey ? 'text' : 'password'} value={activeNewCatalogKey?.apiKey ?? (catalogCredential ? `${catalogCredential.key_prefix}••••••••••••` : 'Create a key to begin')} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!activeNewCatalogKey} onClick={() => { if (activeNewCatalogKey) void copySettingValue('API key', activeNewCatalogKey.apiKey) }}>Copy</Button></div></Field>
+          </div>
+          {catalogCredential?.last_used_at ? <small className="catalog-api-last-used">Last used {shortDate(catalogCredential.last_used_at)} · Last rotated {shortDate(catalogCredential.rotated_at)}</small> : catalogCredential ? <small className="catalog-api-last-used">This key has not been used yet · Last rotated {shortDate(catalogCredential.rotated_at)}</small> : null}
+          <div className="row-actions">
+            <Button icon={catalogCredential ? RefreshCw : KeyRound} loading={rotateCatalogKeyMutation.isPending} onClick={() => catalogCredential?.status === 'active' ? setCatalogAction({ companyId: me.active_company_id, action: 'rotate' }) : rotateCatalogKeyMutation.mutate()}>{catalogCredential?.status === 'active' ? 'Rotate API key' : 'Create API key'}</Button>
+            {catalogCredential?.status === 'active' ? <Button variant="danger" icon={Trash2} disabled={rotateCatalogKeyMutation.isPending} onClick={() => setCatalogAction({ companyId: me.active_company_id, action: 'revoke' })}>Revoke key</Button> : null}
+          </div>
+        </div>}
       </Card> : null}
 
       <Dialog
@@ -702,7 +768,19 @@ export function SettingsPage() {
       </Dialog>
       <ConversionTypeDialog open={typeDialogOpen} record={editingType} onClose={closeTypeDialog} />
       <PieceworkRateDialog open={rateDialogOpen} record={editingRate} onClose={closeRateDialog} />
-      <ProductDialog open={productOpen} record={editingProduct} mutation={productMutation} onClose={() => { setProductOpen(false); setEditingProduct(null) }} />
+      {productOpen ? <ProductDialog open record={editingProduct} mutation={productMutation} onClose={() => { setProductOpen(false); setEditingProduct(null) }} /> : null}
+      <ConfirmDialog
+        open={activeCatalogAction !== null}
+        title={activeCatalogAction === 'revoke' ? 'Revoke the website API key?' : 'Rotate the website API key?'}
+        message={activeCatalogAction === 'revoke'
+          ? 'The current future-website connection will stop immediately. You can create a new key later.'
+          : 'The current API key will stop working immediately. Copy the replacement key and update the future website before its next request.'}
+        confirmLabel={activeCatalogAction === 'revoke' ? 'Revoke key' : 'Rotate key'}
+        destructive
+        busy={rotateCatalogKeyMutation.isPending || revokeCatalogKeyMutation.isPending}
+        onCancel={() => setCatalogAction(null)}
+        onConfirm={() => activeCatalogAction === 'revoke' ? revokeCatalogKeyMutation.mutate() : rotateCatalogKeyMutation.mutate()}
+      />
       <ConfirmDialog open={Boolean(reversingProduct)} title="Reverse this product?" message={`${reversingProduct?.name ?? 'This product'} will be hidden from the customer catalogue and new transactions. Existing history is preserved.`} destructive confirmLabel="Reverse product" busy={reverseProductMutation.isPending} onCancel={() => setReversingProduct(null)} onConfirm={() => { if (reversingProduct) reverseProductMutation.mutate(reversingProduct) }} />
     </div>
   )

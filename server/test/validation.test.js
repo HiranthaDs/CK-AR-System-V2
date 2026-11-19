@@ -65,6 +65,18 @@ describe('Node request validation', () => {
     }), /could not be submitted/)
   })
 
+  it('accepts a single product image and short catalogue description', () => {
+    const value = parse(schemas.product, {
+      name: 'Frame stand', product_type: 'Frame Stand', selling_price: 1250,
+      image_url: '', description: 'A stable photo frame stand.',
+    })
+    expect(value.image_url).toBeUndefined()
+    expectValidation(() => parse(schemas.product, {
+      name: 'Frame stand', product_type: 'Frame Stand', selling_price: 1250,
+      image_url: 'https://example.com/frame.webp', description: 'x'.repeat(501),
+    }), /500/)
+  })
+
   it('requires balanced journals and settlement-safe payroll methods', () => {
     expectValidation(() => parse(schemas.journal, {
       journal_date: '2026-09-30', memo: 'Unbalanced',
@@ -73,6 +85,15 @@ describe('Node request validation', () => {
         { account_code: 'SALES', debit: 0, credit: 99 },
       ],
     }), /not balanced/)
+    const override = parse(schemas.journal, {
+      journal_date: '2026-09-30', memo: 'Approved control-account correction',
+      allow_control_accounts: true, control_account_override_acknowledged: true,
+      lines: [
+        { account_code: 'CASH', debit: 100, credit: 0 },
+        { account_code: 'ACCOUNTS_PAYABLE', debit: 0, credit: 100 },
+      ],
+    })
+    expect(override.allow_control_accounts).toBe(true)
     expectValidation(() => parse(schemas.payroll, {
       payroll_date: '2026-09-30', salary_month: '2026-09', employee_id: ids.employee,
       status: 'paid', payment_method: 'salary_payable', earnings: [{ type: 'salary', amount: 1000 }],

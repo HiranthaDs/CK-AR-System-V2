@@ -51,6 +51,7 @@ import {
 import { ReportView } from '../components/ReportView'
 import { AccountingPdfStudio } from '../components/AccountingPdfStudio'
 import {
+  accountAllowsManualPosting,
   accountCodeOf,
   blockedManualAccountCodes,
   buildQuickJournalLines,
@@ -508,6 +509,7 @@ function JournalWorkspace({ year, accounts, accountsLoading, accountsError, retr
   onReverse: (journal: Journal) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [pendingPost, setPendingPost] = useState<{ body: JsonRecord; blocked: string[] } | null>(null)
   const postingDate = postingDateForYear(year, localIsoDate())
   const defaultValues: JournalValues = {
     journal_date: postingDate,
@@ -524,10 +526,11 @@ function JournalWorkspace({ year, accounts, accountsLoading, accountsError, retr
   const fields = useFieldArray({ control: form.control, name: 'lines' })
   const watchedLines = useWatch({ control: form.control, name: 'lines' })
   const totals = roundedJournalTotals(watchedLines)
-  const allowedAccounts = useMemo(() => manualPostingAccounts(accounts), [accounts])
-  const accountSelectionUnavailable = accountsLoading || Boolean(accountsError) || allowedAccounts.length < 2
+  const allAccounts = useMemo(() => accounts.filter((account) => accountCodeOf(account)), [accounts])
+  const accountSelectionUnavailable = accountsLoading || Boolean(accountsError) || allAccounts.length < 2
   const close = () => {
     if (mutation.isPending) return
+    setPendingPost(null)
     setOpen(false)
     form.reset(defaultValues)
   }
@@ -540,16 +543,21 @@ function JournalWorkspace({ year, accounts, accountsLoading, accountsError, retr
       return
     }
     const blocked = blockedManualAccountCodes(accounts, requiredCodes)
-    if (blocked.length) {
-      form.setError('root', { message: `Protected control account${blocked.length === 1 ? '' : 's'} cannot be posted manually: ${blocked.join(', ')}.` })
-      return
-    }
-    mutation.mutate({
+    setPendingPost({ body: {
       journal_date: values.journal_date,
       memo: values.memo,
       lines: roundManualJournalLines(values.lines),
-    }, { onSuccess: () => { setOpen(false); form.reset(defaultValues) } })
+    }, blocked })
   })
+  const confirmPost = () => {
+    if (!pendingPost) return
+    const hasProtectedAccounts = pendingPost.blocked.length > 0
+    mutation.mutate({
+      ...pendingPost.body,
+      allow_control_accounts: hasProtectedAccounts,
+      control_account_override_acknowledged: hasProtectedAccounts,
+    }, { onSuccess: () => { setPendingPost(null); setOpen(false); form.reset(defaultValues) } })
+  }
   const journals = query.data?.items ?? []
 
   return (
@@ -558,7 +566,7 @@ function JournalWorkspace({ year, accounts, accountsLoading, accountsError, retr
         <SectionTitle title="Posted journals" description="Corrections use traceable reversals; posted financial records are never silently overwritten." actions={<Button icon={Plus} disabled={accountSelectionUnavailable} onClick={() => setOpen(true)}>New journal</Button>} />
         {accountsLoading ? <InlineNotice title="Loading chart of accounts">Journal history remains available while posting accounts are prepared.</InlineNotice> : null}
         {accountsError ? <InlineNotice tone="danger" title="Posting accounts are unavailable">Manual posting is disabled until the chart of accounts reloads. <Button type="button" variant="secondary" size="small" onClick={retryAccounts}>Try again</Button></InlineNotice> : null}
-        {!accountsLoading && !accountsError && allowedAccounts.length < 2 ? <InlineNotice tone="danger" title="Chart of accounts is not ready">At least two manual-posting accounts must be configured.</InlineNotice> : null}
+        {!accountsLoading && !accountsError && allAccounts.length < 2 ? <InlineNotice tone="danger" title="Chart of accounts is not ready">At least two ledger accounts must be configured.</InlineNotice> : null}
         {query.isRefetchError && journals.length ? <InlineNotice tone="warning" title="Latest journal refresh failed">Showing the last successfully loaded journal page.</InlineNotice> : null}
         {query.isLoading ? <LoadingState /> : query.isError && !query.data ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : journals.length ? <>
           <TableWrap><table><thead><tr><th>Date / reference</th><th>Memo</th><th>Source</th><th className="numeric">Debit</th><th className="numeric">Credit</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>
@@ -574,14 +582,14 @@ function JournalWorkspace({ year, accounts, accountsLoading, accountsError, retr
         </> : <EmptyState message="No journals have been posted for this fiscal year." action={<Button icon={Plus} disabled={accountSelectionUnavailable} onClick={() => setOpen(true)}>Post first journal</Button>} />}
       </Card>
 
-      <Dialog open={open} onClose={close} title="Advanced manual journal" description="Each line must contain either a debit or a credit; the journal must balance to the cent." size="wide" closeDisabled={mutation.isPending} footer={<><Button variant="secondary" onClick={close} disabled={mutation.isPending}>Cancel</Button><Button loading={mutation.isPending} onClick={() => void submit()} icon={BookOpenCheck}>Post journal</Button></>}>
+      <Dialog open={open} onClose={close} title="Universal journal" description="Use any ledger account, review the warning, and post a balanced entry." size="wide" closeDisabled={mutation.isPending} footer={<><Button variant="secondary" onClick={close} disabled={mutation.isPending}>Cancel</Button><Button loading={mutation.isPending} onClick={() => void submit()} icon={BookOpenCheck}>Review &amp; save</Button></>}>
         <form onSubmit={(event) => void submit(event)} className="form-stack">
-          <InlineNotice title="Manual journal safeguards">Only non-control accounts are listed. Use operational workflows for customer, supplier, stock, payroll, and tax accounts.</InlineNotice>
+          <InlineNotice tone="warning" title="Universal posting with a final warning">Every chart account is available. Selecting a protected control account triggers a stronger confirmation before saving. Entries must still balance so the ledger remains usable.</InlineNotice>
           <div className="form-grid form-grid--two"><Field label="Journal date" required error={form.formState.errors.journal_date?.message}><Input type="date" min={`${year}-01-01`} max={`${year}-12-31`} disabled={mutation.isPending} aria-invalid={Boolean(form.formState.errors.journal_date)} {...form.register('journal_date')} /></Field><Field label="Memo" required error={form.formState.errors.memo?.message}><Input disabled={mutation.isPending} aria-invalid={Boolean(form.formState.errors.memo)} {...form.register('memo')} /></Field></div>
           <TableWrap><table className="entry-table"><thead><tr><th>Account</th><th>Description</th><th className="numeric">Debit</th><th className="numeric">Credit</th><th><span className="sr-only">Remove</span></th></tr></thead><tbody>
             {fields.fields.map((field, index) => {
               const errors = form.formState.errors.lines?.[index]
-              return <tr key={field.id}><td><Select aria-label={`Line ${index + 1} account`} disabled={mutation.isPending} aria-invalid={Boolean(errors?.account_code)} {...form.register(`lines.${index}.account_code`)}><option value="">Select account</option>{allowedAccounts.map((account) => <option key={account.account_code} value={account.account_code}>{account.account_code} — {account.account_name}</option>)}</Select>{errors?.account_code?.message ? <span className="field__error" role="alert">{errors.account_code.message}</span> : null}</td><td><Input aria-label={`Line ${index + 1} description`} disabled={mutation.isPending} aria-invalid={Boolean(errors?.description)} {...form.register(`lines.${index}.description`)} />{errors?.description?.message ? <span className="field__error" role="alert">{errors.description.message}</span> : null}</td><td><Input aria-label={`Line ${index + 1} debit`} type="number" min="0" step="0.01" disabled={mutation.isPending} aria-invalid={Boolean(errors?.debit)} {...form.register(`lines.${index}.debit`)} />{errors?.debit?.message ? <span className="field__error" role="alert">{errors.debit.message}</span> : null}</td><td><Input aria-label={`Line ${index + 1} credit`} type="number" min="0" step="0.01" disabled={mutation.isPending} aria-invalid={Boolean(errors?.credit)} {...form.register(`lines.${index}.credit`)} />{errors?.credit?.message ? <span className="field__error" role="alert">{errors.credit.message}</span> : null}</td><td><button type="button" className="icon-button icon-button--danger" disabled={mutation.isPending || fields.fields.length <= 2} onClick={() => fields.remove(index)} aria-label={`Remove line ${index + 1}`}><Trash2 size={16} /></button></td></tr>
+              return <tr key={field.id}><td><Select aria-label={`Line ${index + 1} account`} disabled={mutation.isPending} aria-invalid={Boolean(errors?.account_code)} {...form.register(`lines.${index}.account_code`)}><option value="">Select account</option>{allAccounts.map((account) => <option key={account.account_code} value={account.account_code}>{account.account_code} — {account.account_name}{accountAllowsManualPosting(account) ? '' : ' · protected'}</option>)}</Select>{errors?.account_code?.message ? <span className="field__error" role="alert">{errors.account_code.message}</span> : null}</td><td><Input aria-label={`Line ${index + 1} description`} disabled={mutation.isPending} aria-invalid={Boolean(errors?.description)} {...form.register(`lines.${index}.description`)} />{errors?.description?.message ? <span className="field__error" role="alert">{errors.description.message}</span> : null}</td><td><Input aria-label={`Line ${index + 1} debit`} type="number" min="0" step="0.01" disabled={mutation.isPending} aria-invalid={Boolean(errors?.debit)} {...form.register(`lines.${index}.debit`)} />{errors?.debit?.message ? <span className="field__error" role="alert">{errors.debit.message}</span> : null}</td><td><Input aria-label={`Line ${index + 1} credit`} type="number" min="0" step="0.01" disabled={mutation.isPending} aria-invalid={Boolean(errors?.credit)} {...form.register(`lines.${index}.credit`)} />{errors?.credit?.message ? <span className="field__error" role="alert">{errors.credit.message}</span> : null}</td><td><button type="button" className="icon-button icon-button--danger" disabled={mutation.isPending || fields.fields.length <= 2} onClick={() => fields.remove(index)} aria-label={`Remove line ${index + 1}`}><Trash2 size={16} /></button></td></tr>
             })}
           </tbody><tfoot><tr><td colSpan={2}>Totals · Difference {money(totals.difference)}</td><td className="numeric">{money(totals.debit)}</td><td className="numeric">{money(totals.credit)}</td><td /></tr></tfoot></table></TableWrap>
           <div className="integrity-row" role="status" aria-live="polite"><span>{totals.debit > 0 && totals.difference === 0 ? 'Journal is balanced to the cent.' : `Remaining difference: ${money(totals.difference)}`}</span></div>
@@ -590,6 +598,18 @@ function JournalWorkspace({ year, accounts, accountsLoading, accountsError, retr
           <Button type="button" variant="secondary" icon={Plus} disabled={mutation.isPending || fields.fields.length >= 500} onClick={() => fields.append({ account_code: '', description: '', debit: 0, credit: 0 })}>Add line</Button>
         </form>
       </Dialog>
+      <ConfirmDialog
+        open={Boolean(pendingPost)}
+        title={pendingPost?.blocked.length ? 'Save to protected control accounts?' : 'Save this balanced journal?'}
+        message={pendingPost?.blocked.length
+          ? `This entry posts directly to protected account${pendingPost.blocked.length === 1 ? '' : 's'} ${pendingPost.blocked.join(', ')}. It can change balances outside the normal sales, inventory, payroll, tax, or purchasing workflow. Save only after checking the supporting records.`
+          : `Debit and credit both total ${money(totals.debit)}. Saving posts this journal to the ledger; later corrections use a traceable reversal.`}
+        confirmLabel="Save journal"
+        destructive={Boolean(pendingPost?.blocked.length)}
+        busy={mutation.isPending}
+        onCancel={() => setPendingPost(null)}
+        onConfirm={confirmPost}
+      />
     </div>
   )
 }

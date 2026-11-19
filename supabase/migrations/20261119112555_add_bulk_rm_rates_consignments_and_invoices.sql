@@ -347,7 +347,7 @@ begin
     v_id := (v_payload ->> 'id')::uuid;
     update public.bulk_rm_rates
     set status = 'inactive',
-        effective_to = coalesce(effective_to, pg_catalog.greatest(effective_from, current_date)),
+        effective_to = coalesce(effective_to, greatest(effective_from, current_date)),
         updated_at = pg_catalog.clock_timestamp(),
         updated_by = p_actor
     where id = v_id and company_id = v_company_id and status = 'active'

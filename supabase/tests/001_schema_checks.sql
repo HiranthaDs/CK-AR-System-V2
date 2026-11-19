@@ -99,7 +99,7 @@ begin
         'company_inventory_balances', 'fiscal_periods',
         'inventory_ownership_transfers',
         'employees', 'employee_compensation_history', 'conversion_types',
-        'piecework_rates', 'bulk_rm_rates',
+        'piecework_rates', 'bulk_rm_rates', 'catalog_api_credentials',
         'inventory_items', 'accounts',
         'journal_entries', 'journal_lines', 'raw_material_purchase_consignments',
         'raw_material_purchases',
@@ -258,6 +258,38 @@ begin
       and not t.tgisinternal
   ) then
     raise exception 'Bulk RM write guards are incomplete';
+  end if;
+  if pg_catalog.to_regprocedure('public.erp_verify_catalog_api_credential(uuid,text)') is null then
+    raise exception 'Missing catalogue API credential verifier';
+  end if;
+  if pg_catalog.has_function_privilege(
+       'anon', 'public.erp_verify_catalog_api_credential(uuid,text)', 'execute'
+     ) or pg_catalog.has_function_privilege(
+       'authenticated', 'public.erp_verify_catalog_api_credential(uuid,text)', 'execute'
+     ) or not pg_catalog.has_function_privilege(
+       'service_role', 'public.erp_verify_catalog_api_credential(uuid,text)', 'execute'
+     ) then
+    raise exception 'Catalogue API credential verifier privileges are unsafe';
+  end if;
+  if pg_catalog.has_column_privilege(
+    'authenticated', 'public.catalog_api_credentials', 'secret_hash', 'select'
+  ) then
+    raise exception 'Authenticated users must never read catalogue API key hashes';
+  end if;
+  if not exists (
+    select 1 from pg_catalog.pg_trigger t
+    where t.tgrelid = 'public.catalog_api_credentials'::regclass
+      and t.tgname = 'catalog_api_credentials_rpc_guard'
+      and not t.tgisinternal
+  ) then
+    raise exception 'Catalogue API credential write guard is missing';
+  end if;
+  if not exists (
+    select 1 from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name = 'account_balances'
+      and c.column_name = 'allow_manual_posting'
+  ) then
+    raise exception 'Account balance read model is missing manual-posting safety metadata';
   end if;
   if not exists (
     select 1

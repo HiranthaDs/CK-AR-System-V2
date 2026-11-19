@@ -13,7 +13,7 @@ export const READABLE_SOURCES = new Set([
   'inventory_position', 'inventory_stage_summary', 'company_inventory_position',
   'company_inventory_stage_summary', 'production_daily_summary', 'account_balances',
   'account_balances_by_year', 'ledger_view', 'employee_open_earnings', 'sales_outstanding',
-  'payroll_outstanding', 'audit_log',
+  'payroll_outstanding', 'audit_log', 'catalog_api_credentials',
 ])
 
 const TIEBREAKERS = {
@@ -30,6 +30,7 @@ const TIEBREAKERS = {
   company_inventory_stage_summary: 'stage', production_daily_summary: 'production_date',
   account_balances: 'account_code', account_balances_by_year: 'account_code', ledger_view: 'id',
   employee_open_earnings: 'source_id', sales_outstanding: 'id', payroll_outstanding: 'id', audit_log: 'id',
+  catalog_api_credentials: 'id',
 }
 
 const UNSCOPED = new Set([
@@ -221,6 +222,19 @@ export class SupabaseGateway {
     const data = await this.serviceRpc('erp_public_catalog', {}, { requestId, retrySafe: true })
     if (!Array.isArray(data)) throw new ApiError(502, 'Catalogue returned an invalid result', { code: 'invalid_upstream' })
     return data
+  }
+
+  async verifyCatalogCredential(publicId, apiKey, requestId) {
+    const secretHash = createHash('sha256').update(apiKey, 'utf8').digest('hex')
+    const data = await this.serviceRpc('erp_verify_catalog_api_credential', {
+      p_public_id: publicId, p_secret_hash: secretHash,
+    }, { requestId, retrySafe: true })
+    const companyId = unwrap(data)
+    if (!isUuid(companyId)) throw new ApiError(401, 'Invalid catalogue API credentials', {
+      code: 'invalid_catalog_api_credentials',
+      headers: { 'WWW-Authenticate': 'CatalogKey' },
+    })
+    return companyId
   }
 
   async submitPublicOrder(payload, idempotencyKey, requestId) {

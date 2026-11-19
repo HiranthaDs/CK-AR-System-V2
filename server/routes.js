@@ -1,3 +1,4 @@
+import { createHash, createHmac } from 'node:crypto'
 import { ApiError } from './errors.js'
 import { isUuid } from './gateway.js'
 import { parse, schemas } from './validation.js'
@@ -125,6 +126,39 @@ function body(ctx, schema) {
   return parse(schema, ctx.body)
 }
 
+function uuidFromDigest(digest) {
+  const bytes = Buffer.from(digest.subarray(0, 16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x50
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function catalogCredential(ctx, requestKey) {
+  if (!ctx.config.secretKey) {
+    throw new ApiError(503, 'Catalogue API key generation is not configured on the server.', {
+      code: 'service_access_not_configured',
+    })
+  }
+  const seed = `${ctx.principal.companyId}:${requestKey}`
+  const keyBytes = createHmac('sha256', ctx.config.secretKey).update(`catalog-key:${seed}`).digest()
+  const idBytes = createHmac('sha256', ctx.config.secretKey).update(`catalog-id:${seed}`).digest()
+  const apiKey = `ckcat_${keyBytes.toString('base64url')}`
+  return {
+    apiId: uuidFromDigest(idBytes),
+    apiKey,
+    secretHash: createHash('sha256').update(apiKey, 'utf8').digest('hex'),
+    keyPrefix: `${apiKey.slice(0, 14)}...`,
+  }
+}
+
+function catalogPayload(items, catalogId) {
+  return {
+    api_version: '1.0', catalog_id: catalogId,
+    generated_at: new Date().toISOString(), items,
+  }
+}
+
 function reversePayload(id, value) {
   const result = { id }
   if (value.reason) result.reason = value.reason
@@ -203,11 +237,25 @@ add('GET', '/health/ready', { public: true }, async (ctx) => {
   } }
 })
 
-add('GET', '/public/catalog', { public: true }, async (ctx) => ({ body: { items: await ctx.gateway.publicCatalog(ctx.requestId) } }))
+add('GET', '/public/catalog', { public: true }, async (ctx) => ({
+  body: catalogPayload(await ctx.gateway.publicCatalog(ctx.requestId), 'public'),
+}))
 add('POST', '/public/orders', { public: true }, async (ctx) => {
   const payload = body(ctx, schemas.publicOrder)
   delete payload.website
   return { status: 201, body: await ctx.gateway.submitPublicOrder(payload, idempotency(ctx), ctx.requestId) }
+})
+
+add('GET', '/integrations/catalog/products', { public: true }, async (ctx) => {
+  const apiId = String(ctx.headers['x-catalog-api-id'] || '')
+  const apiKey = String(ctx.headers['x-catalog-api-key'] || '')
+  if (!isUuid(apiId) || !/^ckcat_[A-Za-z0-9_-]{43}$/.test(apiKey)) {
+    throw new ApiError(401, 'Invalid catalogue API credentials', {
+      code: 'invalid_catalog_api_credentials', headers: { 'WWW-Authenticate': 'CatalogKey' },
+    })
+  }
+  await ctx.gateway.verifyCatalogCredential(apiId, apiKey, ctx.requestId)
+  return { body: catalogPayload(await ctx.gateway.publicCatalog(ctx.requestId), apiId) }
 })
 
 add('GET', '/me', {}, async (ctx) => ({ body: ctx.principal.profile }))
@@ -216,6 +264,28 @@ add('GET', '/company-profile', { permissions: ['dashboard.read', 'inventory.read
     token: ctx.principal.token, requestId: ctx.requestId,
     select: 'id,code,name,address,phone,email,logo_url,is_active,updated_at',
   }),
+}))
+add('GET', '/catalog-api-credential', { permissions: ['system.admin'] }, async (ctx) => {
+  const response = await ctx.gateway.selectPage('catalog_api_credentials', {
+    token: ctx.principal.token, requestId: ctx.requestId, companyId: ctx.principal.companyId,
+    page: 1, pageSize: 1,
+    select: 'id,public_id,key_prefix,status,last_used_at,created_at,updated_at,rotated_at',
+    order: 'rotated_at.desc', filters: [],
+  })
+  return { body: { credential: response.items[0] || null, endpoint: '/api/v1/integrations/catalog/products' } }
+})
+add('POST', '/catalog-api-credential/rotate', { permissions: ['system.admin'] }, async (ctx) => {
+  const requestKey = idempotency(ctx)
+  const credential = catalogCredential(ctx, requestKey)
+  const result = await ctx.gateway.execute('catalog_api_credential.rotate', {
+    public_id: credential.apiId, secret_hash: credential.secretHash, key_prefix: credential.keyPrefix,
+  }, requestKey, {
+    token: ctx.principal.token, requestId: ctx.requestId, companyId: ctx.principal.companyId,
+  })
+  return { status: 201, body: { ...result, api_id: credential.apiId, api_key: credential.apiKey } }
+})
+add('DELETE', '/catalog-api-credential', { permissions: ['system.admin'] }, async (ctx) => ({
+  body: await execute(ctx, 'catalog_api_credential.revoke', {}),
 }))
 add('GET', '/dashboard', { permissions: ['dashboard.read'] }, async (ctx) => {
   const year = numberQuery(ctx.query, 'year', { minimum: 2000, maximum: 2200 })

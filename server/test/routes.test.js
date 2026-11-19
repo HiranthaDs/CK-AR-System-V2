@@ -7,9 +7,13 @@ GET /health/live
 GET /health/ready
 GET /public/catalog
 POST /public/orders
+GET /integrations/catalog/products
 GET /me
 GET /company-profile
 PATCH /company-profile
+GET /catalog-api-credential
+POST /catalog-api-credential/rotate
+DELETE /catalog-api-credential
 GET /dashboard
 GET /employees
 GET /employees/:employee_id
@@ -116,7 +120,7 @@ POST /admin/purge-business-data
 describe('Node API route parity', () => {
   it('contains every original API method and path exactly once', () => {
     const actual = routeManifest().map((route) => `${route.method} ${route.path}`)
-    expect(actual).toHaveLength(108)
+    expect(actual).toHaveLength(112)
     expect(new Set(actual).size).toBe(actual.length)
     expect(actual.sort()).toEqual(expected)
   })

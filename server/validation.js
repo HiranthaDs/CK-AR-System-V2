@@ -145,8 +145,12 @@ const overtime = z.object({
 
 const product = z.object({
   id: optional(uuid), sku: optional(text(80, 0)), name: text(), product_type: text(100),
-  selling_price: positiveMoney, image_url: optional(trim(z.string().max(1000).url().startsWith('https://'))),
-  description: optional(text(2000, 0)), is_active: z.boolean().default(true),
+  selling_price: positiveMoney,
+  image_url: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    optional(trim(z.string().max(1000).url().startsWith('https://'))),
+  ),
+  description: optional(text(500, 0)), is_active: z.boolean().default(true),
 }).strict()
 
 const publicOrder = z.object({
@@ -248,6 +252,8 @@ const journalLine = z.object({
 const journal = z.object({
   id: optional(uuid), reference_no: optional(reference), journal_date: date, memo: text(500),
   lines: z.array(journalLine).min(2).max(500),
+  allow_control_accounts: z.boolean().default(false),
+  control_account_override_acknowledged: z.boolean().default(false),
 }).strict().refine((value) => {
   const cents = (amount) => Math.round(amount * 100)
   return value.lines.reduce((total, line) => total + cents(line.debit), 0) === value.lines.reduce((total, line) => total + cents(line.credit), 0)

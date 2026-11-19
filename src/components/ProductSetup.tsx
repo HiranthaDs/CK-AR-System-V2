@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { UseMutationResult } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { Boxes, Factory, ImagePlus, PackageOpen, Pencil, RotateCcw, Trash2 } from 'lucide-react'
 import { z } from 'zod/v3'
 import { supabase } from '../lib/supabase'
@@ -18,7 +18,7 @@ export const productSchema = z.object({
   product_type: z.string().min(1, 'Category is required.').max(100),
   selling_price: z.coerce.number().positive('Selling price must be greater than zero.'),
   image_url: z.string().url('Product image URL is invalid.').max(1000).or(z.literal('')),
-  description: z.string().max(2000, 'Use no more than 2,000 characters.'),
+  description: z.string().max(500, 'Use no more than 500 characters.'),
   is_active: z.boolean(),
 })
 
@@ -61,7 +61,10 @@ export function ProductDialog({ open, record, mutation, onClose }: {
 }) {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
-  const [manualCategory, setManualCategory] = useState(false)
+  const [manualCategory, setManualCategory] = useState(() => {
+    const current = record?.product_type ?? ''
+    return Boolean(current && !PRODUCT_CATEGORIES.includes(current as typeof PRODUCT_CATEGORIES[number]))
+  })
   const imagePreview = useMemo(() => imageFile ? URL.createObjectURL(imageFile) : '', [imageFile])
   const form = useForm<ProductValues>({
     resolver: zodResolver(productSchema),
@@ -75,22 +78,18 @@ export function ProductDialog({ open, record, mutation, onClose }: {
       is_active: record?.is_active ?? true,
     },
   })
-
-  useEffect(() => {
-    setImageFile(null)
-    setImageError(null)
-    const current = record?.product_type ?? ''
-    setManualCategory(Boolean(current && !PRODUCT_CATEGORIES.includes(current as typeof PRODUCT_CATEGORIES[number])))
-  }, [open, record?.id, record?.product_type])
+  const description = useWatch({ control: form.control, name: 'description' })
+  const savedImageUrl = useWatch({ control: form.control, name: 'image_url' })
 
   useEffect(() => () => {
     if (imagePreview) URL.revokeObjectURL(imagePreview)
   }, [imagePreview])
 
-  const currentImage = imagePreview || form.watch('image_url')
+  const currentImage = imagePreview || savedImageUrl
   const submit = form.handleSubmit(async (values) => {
     setImageError(null)
     let uploaded: { path: string; url: string } | null = null
+    let productSaved = false
     try {
       uploaded = imageFile ? await uploadProductImage(imageFile) : null
       const body = {
@@ -100,12 +99,13 @@ export function ProductDialog({ open, record, mutation, onClose }: {
         description: values.description.trim(),
       }
       await mutation.mutateAsync({ ...(record ? { id: record.id } : {}), body })
+      productSaved = true
       const oldPath = storagePath(record?.image_url)
       if (oldPath && record?.image_url !== body.image_url) {
         await supabase.storage.from('product-images').remove([oldPath])
       }
     } catch (error) {
-      if (uploaded) await supabase.storage.from('product-images').remove([uploaded.path])
+      if (uploaded && !productSaved) await supabase.storage.from('product-images').remove([uploaded.path])
       setImageError(error instanceof Error ? error.message : 'The product image could not be saved.')
     }
   })
@@ -125,22 +125,25 @@ export function ProductDialog({ open, record, mutation, onClose }: {
           {currentImage ? <img src={currentImage} alt="Product preview" /> : <div><ImagePlus size={34} /><span>Add a clear product photo</span></div>}
         </div>
         <label className="button button--secondary product-image-button">
-          <ImagePlus size={17} /> Choose image
+          <ImagePlus size={17} /> {currentImage ? 'Replace image' : 'Choose image'}
           <input
             className="sr-only"
             type="file"
             accept="image/jpeg,image/png,image/webp"
+            multiple={false}
             onChange={(event) => {
               const file = event.target.files?.[0] ?? null
               setImageError(null)
-              if (file && !acceptedImageTypes.has(file.type)) { setImageError('Use a JPG, PNG, or WebP product image.'); return }
-              if (file && file.size > maxImageSize) { setImageError('Product images must be 5 MB or smaller.'); return }
+              if (file && !acceptedImageTypes.has(file.type)) { setImageError('Use a JPG, PNG, or WebP product image.'); event.currentTarget.value = ''; return }
+              if (file && file.size > maxImageSize) { setImageError('Product images must be 5 MB or smaller.'); event.currentTarget.value = ''; return }
               setImageFile(file)
+              event.currentTarget.value = ''
             }}
           />
         </label>
         {currentImage ? <Button type="button" size="small" variant="ghost" icon={Trash2} onClick={() => { setImageFile(null); form.setValue('image_url', '') }}>Remove image</Button> : null}
-        <small>JPG, PNG, or WebP · maximum 5 MB</small>
+        {imageFile ? <small className="product-image-filename" title={imageFile.name}>Selected: {imageFile.name}</small> : null}
+        <small>One image only · JPG, PNG, or WebP · maximum 5 MB</small>
         {imageError ? <span className="field__error" role="alert">{imageError}</span> : null}
       </div>
 
@@ -162,7 +165,7 @@ export function ProductDialog({ open, record, mutation, onClose }: {
         <Field label="Product name" required error={form.formState.errors.name?.message}><Input {...form.register('name')} placeholder="Example: Large black frame stand" /></Field>
         <Field label="Selling price" required hint="Shown in quotations and the customer portal." error={form.formState.errors.selling_price?.message}><Input type="number" min="0.01" step="0.01" {...form.register('selling_price')} /></Field>
         <Field label="SKU" hint="Leave blank to create one automatically."><Input {...form.register('sku')} placeholder="Automatic" /></Field>
-        <Field label="Description" className="field--span-2" hint="Help customers understand size, finish, colour, or other useful details." error={form.formState.errors.description?.message}><Textarea rows={4} {...form.register('description')} placeholder="Describe this product…" /></Field>
+        <Field label="Short description" className="field--span-2" hint={`Help customers understand size, finish, colour, or other useful details. ${description.length}/500`} error={form.formState.errors.description?.message}><Textarea rows={4} maxLength={500} {...form.register('description')} placeholder="Describe this product…" /></Field>
         <Field label="Availability"><label className="checkbox-line"><input type="checkbox" {...form.register('is_active')} /><span>Active and visible in the customer catalogue</span></label></Field>
       </div>
     </form>

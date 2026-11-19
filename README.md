@@ -1,6 +1,6 @@
 # CK SYS V3
 
-CK SYS V3 is a single-project React and Node.js ERP for CK Plastics and AR Plastics. The Vite frontend and all 102 Node API routes deploy together on Vercel under one domain. Supabase provides Authentication, PostgreSQL, Row Level Security, Storage, and the transactional ERP functions.
+CK SYS V3 is a single-project React and Node.js ERP for CK Plastics and AR Plastics. The Vite frontend and all 112 Node API routes deploy together on Vercel under one domain. Supabase provides Authentication, PostgreSQL, Row Level Security, Storage, and the transactional ERP functions.
 
 Production: [https://ck-sys-v3.vercel.app](https://ck-sys-v3.vercel.app)
 
@@ -13,7 +13,7 @@ Production: [https://ck-sys-v3.vercel.app](https://ck-sys-v3.vercel.app)
 - Product catalogue with Supabase Storage images and public customer order requests
 - Quotations, invoices, partial receipts, balances, and server-calculated COGS
 - Employees, daily targets, overtime, payroll, paysheets, and settlements
-- Double-entry journals, ledger, financial reports, PDF Studio, immutable reversals, and audit history
+- Double-entry journals, warning-confirmed universal journals, ledger, financial reports, PDF Studio, immutable reversals, and audit history
 - Company-scoped destructive reset with explicit confirmation controls
 - Responsive React interface and Node-based documentation tooling
 
@@ -90,6 +90,18 @@ npm run check            # lint, all tests, and production build
 npm run manual:screenshots
 npm run manual:build
 ```
+
+## Future website product API
+
+Company administrators create or rotate the scoped catalogue credential at the very bottom of Settings. The full API key is shown only once; store it in the website server environment, never in browser JavaScript. The website can then request the active product catalogue:
+
+```http
+GET /api/v1/integrations/catalog/products
+X-Catalog-API-ID: <API ID from Settings>
+X-Catalog-API-Key: <API key shown after create/rotate>
+```
+
+The versioned response contains product ID, SKU, name, category, one Storage image URL, selling price, and short description. This credential is read-only and cannot call ERP mutation routes.
 
 ## Deploy everything to one Vercel project
 

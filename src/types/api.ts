@@ -773,6 +773,29 @@ export interface AccountBalance extends JsonRecord {
   balance: Numeric
   debit?: Numeric
   credit?: Numeric
+  is_control?: boolean
+  allow_manual_posting?: boolean
+}
+
+export interface CatalogApiCredential extends JsonRecord {
+  id: Id
+  public_id: Id
+  key_prefix: string
+  status: 'active' | 'revoked'
+  last_used_at?: string | null
+  created_at: string
+  updated_at: string
+  rotated_at: string
+}
+
+export interface CatalogApiCredentialResponse {
+  credential: CatalogApiCredential | null
+  endpoint: string
+}
+
+export interface CatalogApiKeyReceipt extends MutationReceipt {
+  api_id: Id
+  api_key: string
 }
 
 export interface EmployeePayload {
