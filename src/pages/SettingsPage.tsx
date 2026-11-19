@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertOctagon, BookOpen, Boxes, Copy, Database, ExternalLink, KeyRound, Pencil, Plus, RefreshCw, Save, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
+import { AlertOctagon, BookOpen, Boxes, Copy, Database, ExternalLink, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Save, ShieldCheck, Tags, Trash2, UserPlus, Wrench, type LucideIcon } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { ConversionTypeDialog, PieceworkRateDialog } from '../components/ConversionSetupDialogs'
@@ -15,6 +15,7 @@ import type { AdminUserAccess, CatalogApiCredentialResponse, CatalogApiKeyReceip
 import { useAppContext } from '../layout/AppShell'
 
 export const PURGE_CONFIRMATION = 'DELETE ALL BUSINESS DATA'
+const CATALOG_DETAILS_PASSWORD = '112113'
 
 type CompanyAccessChoice = 'CK' | 'AR' | 'BOTH'
 type AccessRole = 'admin' | 'accountant' | 'operations' | 'payroll' | 'viewer'
@@ -193,6 +194,9 @@ export function SettingsPage() {
   const [reversingProduct, setReversingProduct] = useState<InventoryItem | null>(null)
   const [catalogAction, setCatalogAction] = useState<{ companyId: string; action: 'rotate' | 'revoke' } | null>(null)
   const [newCatalogLink, setNewCatalogLink] = useState<{ companyId: string; apiId: string } | null>(null)
+  const [catalogUnlockCompanyId, setCatalogUnlockCompanyId] = useState<string | null>(null)
+  const [catalogPassword, setCatalogPassword] = useState('')
+  const [catalogPasswordError, setCatalogPasswordError] = useState<string | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
   const [createUserOpen, setCreateUserOpen] = useState(false)
@@ -415,6 +419,21 @@ export function SettingsPage() {
     ?? (catalogCredential?.status === 'active' ? catalogCredential.public_id : '')
   const websiteCatalogApiUrl = buildWebsiteCatalogUrl(supabaseProjectUrl, visibleCatalogApiId)
   const websiteCatalogSnippet = buildWebsiteCatalogSnippet(websiteCatalogApiUrl)
+  const catalogDetailsUnlocked = catalogUnlockCompanyId === me.active_company_id
+  const unlockCatalogDetails = () => {
+    if (catalogPassword !== CATALOG_DETAILS_PASSWORD) {
+      setCatalogPasswordError('Incorrect password. Try again.')
+      return
+    }
+    setCatalogUnlockCompanyId(me.active_company_id)
+    setCatalogPassword('')
+    setCatalogPasswordError(null)
+  }
+  const lockCatalogDetails = () => {
+    setCatalogUnlockCompanyId(null)
+    setCatalogPassword('')
+    setCatalogPasswordError(null)
+  }
   const copySettingValue = async (label: string, value: string) => {
     try {
       await navigator.clipboard.writeText(value)
@@ -599,8 +618,19 @@ export function SettingsPage() {
           </InlineNotice>
           <div className="catalog-api-fields">
             <Field label="Public website data URL" hint="GET · works from plain HTML, React, Next.js, WordPress, Shopify custom code, and other browser websites"><div className="copy-field"><Input value={websiteCatalogApiUrl || 'Enable the website API to create the link'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!websiteCatalogApiUrl} onClick={() => void copySettingValue('Website API URL', websiteCatalogApiUrl)}>Copy URL</Button></div></Field>
-            <Field label="Catalog ID" hint="Already included in the URL; no request header is needed"><div className="copy-field"><Input value={visibleCatalogApiId || 'Created automatically'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!visibleCatalogApiId} onClick={() => void copySettingValue('Catalog ID', visibleCatalogApiId)}>Copy ID</Button></div></Field>
-            <Field label="Copy-and-paste JavaScript" hint="Paste this into the partner website and render catalog.company and catalog.items"><div className="catalog-api-code"><textarea className="input textarea" rows={5} value={websiteCatalogSnippet || '// Enable the website API to generate the code'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!websiteCatalogSnippet} onClick={() => void copySettingValue('JavaScript example', websiteCatalogSnippet)}>Copy code</Button></div></Field>
+            {catalogDetailsUnlocked ? <div className="catalog-api-protected catalog-api-protected--open">
+              <div className="catalog-api-protected__heading"><div><LockKeyhole size={18} aria-hidden="true" /><span><strong>Protected API details unlocked</strong><small>Visible for this company until you lock them or refresh the page.</small></span></div><Button type="button" size="small" variant="secondary" icon={LockKeyhole} onClick={lockCatalogDetails}>Lock details</Button></div>
+              <Field label="Catalog ID" hint="Already included in the URL; no request header is needed"><div className="copy-field"><Input value={visibleCatalogApiId || 'Created automatically'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!visibleCatalogApiId} onClick={() => void copySettingValue('Catalog ID', visibleCatalogApiId)}>Copy ID</Button></div></Field>
+              <Field label="Copy-and-paste JavaScript" hint="Paste this into the partner website and render catalog.company and catalog.items"><div className="catalog-api-code"><textarea className="input textarea" rows={5} value={websiteCatalogSnippet || '// Enable the website API to generate the code'} readOnly onFocus={(event) => event.currentTarget.select()} /><Button variant="secondary" icon={Copy} disabled={!websiteCatalogSnippet} onClick={() => void copySettingValue('JavaScript example', websiteCatalogSnippet)}>Copy code</Button></div></Field>
+            </div> : <form className="catalog-api-protected catalog-api-protected--locked" onSubmit={(event) => { event.preventDefault(); unlockCatalogDetails() }}>
+              <div className="catalog-api-protected__intro"><LockKeyhole size={22} aria-hidden="true" /><div><strong>Catalog ID and JavaScript are locked</strong><span>Enter the API details password to view and copy these two fields.</span></div></div>
+              <div className="catalog-api-unlock">
+                <Field label="API details password" error={catalogPasswordError ?? undefined}>
+                  <Input type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={catalogPassword} onChange={(event) => { setCatalogPassword(event.target.value); setCatalogPasswordError(null) }} />
+                </Field>
+                <Button type="submit" icon={LockKeyhole} disabled={!catalogPassword}>Unlock details</Button>
+              </div>
+            </form>}
           </div>
           {catalogCredential ? <small className="catalog-api-last-used">Public link created or regenerated {shortDate(catalogCredential.rotated_at)}. Product changes use the same link automatically.</small> : null}
           <div className="row-actions">

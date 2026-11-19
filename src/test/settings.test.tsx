@@ -173,7 +173,8 @@ describe('conversion setup', () => {
 })
 
 describe('super-admin settings', () => {
-  it('shows a browser-ready Supabase catalog URL without requiring a secret key', async () => {
+  it('keeps the catalog ID and JavaScript behind the requested session password', async () => {
+    const user = userEvent.setup()
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     })
@@ -203,7 +204,24 @@ describe('super-admin settings', () => {
 
     const publicUrl = await screen.findByLabelText<HTMLInputElement>(/Public website data URL/)
     expect(publicUrl.value).toContain('/functions/v1/website-catalog?catalog_id=')
+    expect(screen.queryByLabelText(/Catalog ID/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Copy-and-paste JavaScript/)).not.toBeInTheDocument()
+    expect(screen.getByText('Catalog ID and JavaScript are locked')).toBeInTheDocument()
+
+    const password = screen.getByLabelText('API details password')
+    await user.type(password, '112112')
+    await user.click(screen.getByRole('button', { name: 'Unlock details' }))
+    expect(screen.getByText('Incorrect password. Try again.')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Catalog ID/)).not.toBeInTheDocument()
+
+    await user.clear(password)
+    await user.type(password, '112113')
+    await user.click(screen.getByRole('button', { name: 'Unlock details' }))
+
+    expect(screen.getByLabelText<HTMLInputElement>(/Catalog ID/).value).toBe('40000000-0000-4000-8000-000000000004')
     expect(screen.getByLabelText<HTMLTextAreaElement>(/Copy-and-paste JavaScript/).value).toContain('await fetch(')
+    await user.click(screen.getByRole('button', { name: 'Lock details' }))
+    expect(screen.queryByLabelText(/Catalog ID/)).not.toBeInTheDocument()
     expect(screen.getByText(/no website backend · no secret key/i)).toBeInTheDocument()
     expect(screen.queryByText('X-Catalog-API-Key')).not.toBeInTheDocument()
   })

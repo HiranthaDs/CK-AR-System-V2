@@ -2511,6 +2511,20 @@ tbody tr:hover { background: #fafbfe; }
 .catalog-api-fields { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .catalog-api-code { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
 .catalog-api-code textarea { min-height: 118px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .82rem; line-height: 1.55; }
+.catalog-api-protected { display: grid; gap: 16px; padding: 16px; border: 1px solid #c8d7ee; border-radius: 12px; }
+.catalog-api-protected--locked { background: #f6f9fe; }
+.catalog-api-protected--open { background: #fff; }
+.catalog-api-protected__intro,
+.catalog-api-protected__heading,
+.catalog-api-protected__heading > div { display: flex; align-items: center; gap: 11px; }
+.catalog-api-protected__intro > svg,
+.catalog-api-protected__heading svg { flex: 0 0 auto; color: #315f9f; }
+.catalog-api-protected__intro div,
+.catalog-api-protected__heading span { display: grid; gap: 2px; }
+.catalog-api-protected__intro span,
+.catalog-api-protected__heading small { color: var(--muted); }
+.catalog-api-protected__heading { justify-content: space-between; }
+.catalog-api-unlock { display: grid; grid-template-columns: minmax(180px, 320px) auto; align-items: end; gap: 10px; }
 .copy-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .copy-field .input { min-width: 0; font-family: var(--font-mono, monospace); }
 .catalog-api-last-used { color: var(--muted); }
@@ -2691,9 +2705,11 @@ tbody tr:hover { background: #fafbfe; }
   .settings-guide-launcher > .button { width: 100%; }
   .workflow-guide__languages { grid-template-columns: 1fr; }
   .copy-field,
-  .catalog-api-code { grid-template-columns: 1fr; }
+  .catalog-api-code,
+  .catalog-api-unlock { grid-template-columns: 1fr; }
   .copy-field .button,
   .catalog-api-code .button { width: 100%; }
+  .catalog-api-protected__heading { align-items: flex-start; flex-direction: column; }
   .inventory-detail-summary,
   .audit-detail dl,
   .audit-filter-grid,
