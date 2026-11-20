@@ -145,7 +145,18 @@ npx vercel
 npx vercel --prod
 ```
 
-Do not configure a separate backend project, external API URL, Docker service, or CORS origin. Frontend and backend intentionally share the same Vercel origin.
+For a Vercel deployment, do not configure a separate backend project, external
+API URL, or CORS origin. Frontend and backend intentionally share the same
+Vercel origin.
+
+## Deploy to Render
+
+The checked-in `render.yaml` and `Dockerfile` deploy the same React frontend and
+Node API as one Render Docker web service. Create or sync the Blueprint, provide
+the same `VITE_*` and server-only Supabase environment values listed above, and
+keep `VITE_API_URL=/api/v1`. The container binds to Render's `PORT`, serves the
+SPA fallback for direct browser routes, and exposes `/api/v1/health/live` for
+deployment health checks.
 
 ## Post-deployment verification
 

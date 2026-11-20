@@ -174,7 +174,7 @@ begin
         pg_catalog.hashtextextended('sales-invoice:' || v_company_id::text || ':' || v_prefix, 0)
       );
       select coalesce(pg_catalog.max(
-        pg_catalog.substring(s.invoice_no from '([0-9]+)$')::bigint
+        pg_catalog.substring(s.invoice_no, '([0-9]+)$')::bigint
       ), 0) + 1
       into v_sequence
       from public.sales s
@@ -256,7 +256,7 @@ begin
       pg_catalog.hashtextextended('quotation:' || v_company_id::text, 0)
     );
     select coalesce(pg_catalog.max(
-      pg_catalog.substring(q.quotation_no from '([0-9]+)$')::bigint
+      pg_catalog.substring(q.quotation_no, '([0-9]+)$')::bigint
     ), 0) + 1
     into v_sequence
     from public.quotations q
