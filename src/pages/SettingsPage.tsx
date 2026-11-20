@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { ConversionTypeDialog, PieceworkRateDialog } from '../components/ConversionSetupDialogs'
 import { ProductCards, ProductDialog, type ProductValues } from '../components/ProductSetup'
+import { BrandLogo } from '../components/BrandLogo'
 import { useToast } from '../components/Toast'
 import { Badge, Button, Card, EmptyState, ErrorState, Field, InlineNotice, Input, LoadingState, PageHeader, SectionTitle, TableWrap } from '../components/UI'
 import { api, ApiError } from '../lib/api'
@@ -473,14 +474,14 @@ export function SettingsPage() {
       <Card>
         <SectionTitle
           title="Company invoice details"
-          description={`These details and the logo populate ${me.active_company_name} raw-material purchase invoices automatically.`}
+          description={`These details and the built-in CK Plastic logo populate ${me.active_company_name} invoices automatically.`}
           actions={me.permission_codes.includes('system.admin') ? <Button icon={Save} loading={companyProfileMutation.isPending} onClick={() => companyProfileMutation.mutate()}>Save invoice details</Button> : undefined}
         />
         {companyProfileQuery.isLoading ? <LoadingState label="Loading company details…" /> : companyProfileQuery.isError ? <ErrorState error={companyProfileQuery.error} onRetry={() => void companyProfileQuery.refetch()} /> : <div className="form-grid form-grid--two">
+          <div className="invoice-details-logo field--span-2"><BrandLogo alt="CK Plastic invoice logo" /><div><strong>Invoice logo</strong><span>The bundled Logo.png is embedded in saved PDFs and print layouts.</span></div></div>
           <Field label="Company name"><Input value={companyProfileQuery.data?.name ?? me.active_company_name} readOnly /></Field>
           <Field label="Phone / WhatsApp"><Input type="tel" value={effectiveCompanyDraft.phone} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, phone: event.target.value })} /></Field>
           <Field label="Email"><Input type="email" value={effectiveCompanyDraft.email} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, email: event.target.value })} /></Field>
-          <Field label="Logo URL" hint="Use an HTTPS image URL that can be loaded by the browser and PDF exporter."><Input type="url" value={effectiveCompanyDraft.logo_url} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, logo_url: event.target.value })} placeholder="https://…" /></Field>
           <Field label="Address" className="field--span-2"><textarea className="input textarea" rows={3} value={effectiveCompanyDraft.address} readOnly={!me.permission_codes.includes('system.admin')} onChange={(event) => setCompanyDraft({ ...effectiveCompanyDraft, address: event.target.value })} /></Field>
         </div>}
       </Card>

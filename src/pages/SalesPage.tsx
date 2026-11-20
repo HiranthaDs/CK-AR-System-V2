@@ -14,6 +14,7 @@ import { useAppContext } from '../layout/AppShell'
 import { useToast } from '../components/Toast'
 import { ConfirmDialog, Dialog } from '../components/Dialog'
 import { RemoteSelect } from '../components/RemoteSelect'
+import { ActionMenu } from '../components/ActionMenu'
 import {
   Badge,
   Button,
@@ -309,9 +310,9 @@ export function SalesPage() {
       <InvoiceActionsDialog saleId={invoiceActionId} onClose={() => setInvoiceActionId(null)} />
       <PaymentDialog sale={paymentSale} mutation={paymentMutation} onReverse={(payment) => { if (paymentSale) setReversePayment({ sale: paymentSale, payment }) }} onClose={() => setPaymentSale(null)} />
       <CustomerOrderDialog key={selectedOrder?.id ?? 'closed-order'} order={selectedOrder} mutation={orderStatusMutation} onClose={() => setSelectedOrder(null)} />
-      <ConfirmDialog open={Boolean(reverseSale)} title="Reverse this invoice?" message={`${reverseSale?.invoice_no ?? 'This invoice'} will remain in the audit trail. Stock, revenue, COGS, and receipts will be offset atomically.`} destructive confirmLabel="Post reversal" busy={reverseSaleMutation.isPending} onCancel={() => setReverseSale(null)} onConfirm={() => { if (reverseSale) reverseSaleMutation.mutate(reverseSale) }} />
-      <ConfirmDialog open={Boolean(reversePayment)} title="Reverse this receipt?" message={`${reversePayment?.payment.reference_no ?? 'This receipt'} will remain visible and its accounting effect will be offset.`} destructive confirmLabel="Reverse receipt" busy={reversePaymentMutation.isPending} onCancel={() => setReversePayment(null)} onConfirm={() => { if (reversePayment) reversePaymentMutation.mutate(reversePayment) }} />
-      <ConfirmDialog open={Boolean(cancelQuotation)} title="Cancel this quotation?" message={`${cancelQuotation?.quotation_no ?? 'This quotation'} will remain visible in quotation history and can no longer be edited.`} destructive confirmLabel="Cancel quotation" busy={cancelQuotationMutation.isPending} onCancel={() => setCancelQuotation(null)} onConfirm={() => { if (cancelQuotation) cancelQuotationMutation.mutate(cancelQuotation) }} />
+      <ConfirmDialog open={Boolean(reverseSale)} title="Reverse this invoice?" message={`${reverseSale?.invoice_no ?? 'This invoice'} will remain in the audit trail. Only this invoice's stock, revenue, COGS, and receipts will be offset atomically; other invoices remain unchanged.`} destructive confirmLabel="Post reversal" busy={reverseSaleMutation.isPending} onCancel={() => setReverseSale(null)} onConfirm={() => { if (reverseSale) reverseSaleMutation.mutate(reverseSale) }} />
+      <ConfirmDialog open={Boolean(reversePayment)} title="Reverse this receipt?" message={`${reversePayment?.payment.reference_no ?? 'This receipt'} will remain visible. Only this receipt's accounting effect and its parent invoice balance will be updated; other receipts and invoices remain unchanged.`} destructive confirmLabel="Reverse receipt" busy={reversePaymentMutation.isPending} onCancel={() => setReversePayment(null)} onConfirm={() => { if (reversePayment) reversePaymentMutation.mutate(reversePayment) }} />
+      <ConfirmDialog open={Boolean(cancelQuotation)} title="Cancel this quotation?" message={`${cancelQuotation?.quotation_no ?? 'This quotation'} will remain visible in quotation history and can no longer be edited. No other quotation, invoice, stock, or accounting record will be changed.`} destructive confirmLabel="Cancel quotation" busy={cancelQuotationMutation.isPending} onCancel={() => setCancelQuotation(null)} onConfirm={() => { if (cancelQuotation) cancelQuotationMutation.mutate(cancelQuotation) }} />
     </div>
   )
 }
@@ -397,7 +398,7 @@ function QuotationList({ query, page, setPage, search, setSearch, editingId, onA
         <td className="numeric">{quotation.quotation_items?.length ?? 0}</td>
         <td className="numeric"><strong>{money(quotation.total_amount)}</strong></td>
         <td><Badge tone={quotation.status === 'accepted' ? 'success' : quotation.status === 'rejected' || quotation.status === 'cancelled' || quotation.status === 'expired' ? 'danger' : quotation.status === 'sent' ? 'warning' : 'neutral'}>{titleCase(quotation.status)}</Badge></td>
-        <td><div className="row-actions"><Button size="small" variant="ghost" icon={FileText} onClick={() => onPreview(quotation)}>PDF</Button><Button size="small" variant="ghost" icon={Pencil} loading={editingId === quotation.id} disabled={quotation.status === 'cancelled' || Boolean(editingId && editingId !== quotation.id)} onClick={() => onEdit(quotation)}>Edit</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={quotation.status === 'cancelled'} onClick={() => onCancel(quotation)}>Cancel</Button></div></td>
+        <td><ActionMenu><Button size="small" variant="ghost" icon={FileText} onClick={() => onPreview(quotation)}>PDF</Button><Button size="small" variant="ghost" icon={Pencil} loading={editingId === quotation.id} disabled={quotation.status === 'cancelled' || Boolean(editingId && editingId !== quotation.id)} onClick={() => onEdit(quotation)}>Edit</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={quotation.status === 'cancelled'} onClick={() => onCancel(quotation)}>Cancel</Button></ActionMenu></td>
       </tr>)}</tbody></table></TableWrap>
       <Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} />
     </> : <EmptyState message="No quotations match the selected period and search." action={<Button icon={Plus} onClick={onAdd}>Create first quotation</Button>} />}

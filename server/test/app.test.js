@@ -86,6 +86,72 @@ describe('Node API handler', () => {
     expect(gateway.execute).toHaveBeenCalledWith('product.upsert', expect.objectContaining({ selling_price: 1250 }), 'product-0001', expect.objectContaining({ companyId: COMPANY_ID }))
   })
 
+  it('scopes edits, reversals, cancellations, and deactivation to the selected record ID', async () => {
+    const employeeId = '30000000-0000-4000-8000-000000000003'
+    const dailyTargetId = '40000000-0000-4000-8000-000000000004'
+    const overtimeId = '50000000-0000-4000-8000-000000000005'
+    const payrollId = '60000000-0000-4000-8000-000000000006'
+    const quotationId = '70000000-0000-4000-8000-000000000007'
+    const mutation = (key, body) => ({
+      method: body === undefined ? 'DELETE' : 'PATCH',
+      headers: auth({ 'Content-Type': 'application/json', 'Idempotency-Key': key }),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+
+    const responses = []
+    responses.push(await fetch(`${origin}/api/v1/daily-work/${dailyTargetId}`, mutation('scope-edit-daily', {
+        employee_id: employeeId, work_date: '2026-11-20', target_percent: 90, notes: 'Selected row only',
+      })))
+    responses.push(await fetch(`${origin}/api/v1/overtime/${overtimeId}`, mutation('scope-edit-ot', {
+      employee_id: employeeId, work_date: '2026-11-20', hours: 2, target_percent: 80, notes: 'Selected row only',
+    })))
+    responses.push(await fetch(`${origin}/api/v1/quotations/${quotationId}`, mutation('scope-edit-quotation', {
+      quotation_date: '2026-11-20', valid_until: '2026-11-30', customer_name: 'Selected Customer',
+      items: [{ manual: true, product_name: 'Selected Product', quantity: 1, unit_price: 1000, discount: 0 }],
+    })))
+    responses.push(await fetch(`${origin}/api/v1/payroll/${payrollId}`, mutation('scope-correct-payroll', {
+      payroll_date: '2026-11-20', salary_month: '2026-11', employee_id: employeeId, status: 'payable',
+      earnings: [{ type: 'monthly_salary', amount: 100000 }],
+    })))
+    responses.push(await fetch(`${origin}/api/v1/employees/${employeeId}`, mutation('scope-edit-employee', {
+      name: 'Selected Employee', joined_date: '2026-01-01', pay_model: 'piecework',
+    })))
+    responses.push(await fetch(`${origin}/api/v1/daily-work/${dailyTargetId}`, {
+        method: 'DELETE', headers: auth({ 'Content-Type': 'application/json', 'Idempotency-Key': 'scope-reverse-daily' }),
+        body: JSON.stringify({ reason: 'Selected row only' }),
+      }))
+    responses.push(await fetch(`${origin}/api/v1/overtime/${overtimeId}`, {
+        method: 'DELETE', headers: auth({ 'Content-Type': 'application/json', 'Idempotency-Key': 'scope-reverse-ot' }),
+        body: JSON.stringify({ reason: 'Selected row only' }),
+      }))
+    responses.push(await fetch(`${origin}/api/v1/payroll/${payrollId}`, {
+        method: 'DELETE', headers: auth({ 'Content-Type': 'application/json', 'Idempotency-Key': 'scope-reverse-payroll' }),
+        body: JSON.stringify({ reason: 'Selected row only' }),
+      }))
+    responses.push(await fetch(`${origin}/api/v1/quotations/${quotationId}`, mutation('scope-cancel-quotation')))
+    responses.push(await fetch(`${origin}/api/v1/employees/${employeeId}`, mutation('scope-deactivate-employee')))
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 200, 200, 200, 200, 200, 200, 200])
+    expect(gateway.execute.mock.calls.map(([operation, payload]) => [operation, payload])).toEqual([
+      ['daily_target.upsert', expect.objectContaining({ id: dailyTargetId, employee_id: employeeId })],
+      ['overtime.upsert', expect.objectContaining({ id: overtimeId, employee_id: employeeId })],
+      ['quotation.upsert', expect.objectContaining({ id: quotationId, customer_name: 'Selected Customer' })],
+      ['payroll.replace', expect.objectContaining({
+        target: { id: payrollId },
+        replacement: expect.objectContaining({ employee_id: employeeId, salary_month: '2026-11' }),
+      })],
+      ['employee.upsert', expect.objectContaining({ id: employeeId, name: 'Selected Employee' })],
+      ['daily_target.reverse', { id: dailyTargetId, reason: 'Selected row only' }],
+      ['overtime.reverse', { id: overtimeId, reason: 'Selected row only' }],
+      ['payroll.reverse', { id: payrollId, reason: 'Selected row only' }],
+      ['quotation.cancel', { id: quotationId }],
+      ['employee.delete', { id: employeeId }],
+    ])
+    for (const call of gateway.execute.mock.calls) {
+      expect(call[3]).toEqual(expect.objectContaining({ companyId: COMPANY_ID }))
+    }
+  })
+
   it('returns a JSON 404 for unknown API routes', async () => {
     const response = await fetch(`${origin}/api/v1/not-a-route`, { headers: auth() })
     expect(response.status).toBe(404)

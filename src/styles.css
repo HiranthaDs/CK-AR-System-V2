@@ -612,6 +612,27 @@ code,
   font-size: 0.76rem;
 }
 
+.action-menu { display: inline-flex; }
+.action-menu__trigger { min-width: 96px; }
+.action-menu__trigger svg:last-child { transition: transform 150ms ease; }
+.action-menu__trigger[aria-expanded="true"] svg:last-child { transform: rotate(180deg); }
+.action-menu__popover {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  min-width: 176px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgb(17 31 52 / 18%);
+}
+.action-menu__popover .button {
+  width: 100%;
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
 .icon-button {
   display: inline-grid;
   width: 36px;
@@ -1423,6 +1444,10 @@ tbody tr:hover { background: #fafbfe; }
 .rm-invoice-preview__head { padding-bottom: 20px; border-bottom: 3px solid var(--primary); }
 .rm-invoice-preview__brand { display: flex; gap: 14px; }
 .rm-invoice-preview__brand img { width: 84px; height: auto; align-self: flex-start; object-fit: contain; }
+.invoice-details-logo { display: flex; align-items: center; gap: 16px; min-height: 82px; }
+.invoice-details-logo img { width: 116px; height: auto; flex: 0 0 auto; }
+.invoice-details-logo > div { display: grid; gap: 4px; }
+.invoice-details-logo span { color: var(--muted); font-size: .78rem; }
 .rm-invoice-preview__head h3 { margin: 0 0 7px; font-size: 1.35rem; }
 .rm-invoice-preview__head p,
 .rm-invoice-preview__meta p,
@@ -2828,6 +2853,7 @@ tbody tr:hover { background: #fafbfe; }
   .topbar,
   .bottom-nav,
   .tabs,
+  .action-menu__popover,
   .no-print,
   .toast-region { display: none !important; }
   .app-main { margin: 0; }

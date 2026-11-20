@@ -72,6 +72,27 @@ describe('bilingual system workflow guide', () => {
   })
 })
 
+describe('company invoice branding', () => {
+  it('shows the bundled logo instead of a remote logo URL field', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    vi.spyOn(api, 'list').mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 0 })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/settings']}>
+          <ToastProvider><SettingsPage /></ToastProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByRole('img', { name: 'CK Plastic invoice logo' })).toBeInTheDocument()
+    expect(screen.getByText('The bundled Logo.png is embedded in saved PDFs and print layouts.')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Logo URL' })).not.toBeInTheDocument()
+  })
+})
+
 describe('administrator business-data purge', () => {
   it('requires the exact phrase and acknowledgement before calling the API', async () => {
     const user = userEvent.setup()
