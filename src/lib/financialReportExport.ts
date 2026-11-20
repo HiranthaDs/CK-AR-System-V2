@@ -7,6 +7,7 @@ import {
   type FinancialReportModel,
   type FinancialStatementLine,
 } from './financialReport'
+import { addBrandLogo } from './brand'
 
 const NAVY = '1D2939'
 const BLUE = '175CD3'
@@ -82,6 +83,7 @@ export async function createFinancialPdfBlob(model: FinancialReportModel): Promi
     keywords: 'financial summary, account balances',
   })
 
+  addBrandLogo(document, { x: margin, y: 12, maxWidth: 34, maxHeight: 21 })
   let cursorY = 18
   const addPageIfNeeded = (minimumHeight: number) => {
     if (cursorY + minimumHeight <= pageHeight - 24) return
@@ -155,17 +157,18 @@ export async function createFinancialPdfBlob(model: FinancialReportModel): Promi
   document.setTextColor(`#${NAVY}`)
   document.setFont('helvetica', 'bold')
   document.setFontSize(18)
-  const titleLines = document.splitTextToSize(report.title, contentWidth) as string[]
-  document.text(titleLines, margin, cursorY)
+  const headerTextX = margin + 41
+  const titleLines = document.splitTextToSize(report.title, contentWidth - 41) as string[]
+  document.text(titleLines, headerTextX, cursorY)
   cursorY += titleLines.length * 7
   document.setTextColor(`#${GREY}`)
   document.setFont('helvetica', 'normal')
   document.setFontSize(9)
-  document.text(`Fiscal year ${report.year}`, margin, cursorY)
+  document.text(`Fiscal year ${report.year}`, headerTextX, cursorY)
   cursorY += 5
   document.setFontSize(7.4)
-  document.text(`Snapshot generated: ${report.generatedAt ? new Date(report.generatedAt).toLocaleString('en-LK') : 'Not supplied'} · Export generated: ${new Date().toLocaleString('en-LK')} · Currency: ${report.currency}`, margin, cursorY)
-  cursorY += 8
+  document.text(`Snapshot generated: ${report.generatedAt ? new Date(report.generatedAt).toLocaleString('en-LK') : 'Not supplied'} · Export generated: ${new Date().toLocaleString('en-LK')} · Currency: ${report.currency}`, headerTextX, cursorY, { maxWidth: contentWidth - 41 })
+  cursorY = Math.max(cursorY + 8, 38)
 
   autoTable(document, {
     startY: cursorY,

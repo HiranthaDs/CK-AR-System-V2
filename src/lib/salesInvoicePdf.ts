@@ -6,7 +6,6 @@ import {
   drawInvoiceFooters,
   drawInvoiceHeader,
   invoiceCompany,
-  invoiceLogoDataUrl,
   openInvoicePdf,
 } from './invoiceBrand'
 
@@ -28,10 +27,9 @@ export function salesInvoicePdfFilename({ sale }: SalesInvoicePdfInput) {
 
 export async function createSalesInvoicePdfBlob(input: SalesInvoicePdfInput): Promise<Blob> {
   const company = invoiceCompany(input.company)
-  const [{ jsPDF }, { autoTable }, logo] = await Promise.all([
+  const [{ jsPDF }, { autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
-    invoiceLogoDataUrl(company.logo_url),
   ])
   const { sale } = input
   const document = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true })
@@ -46,7 +44,7 @@ export async function createSalesInvoicePdfBlob(input: SalesInvoicePdfInput): Pr
     author: company.name,
     creator: 'CK SYS',
   })
-  drawInvoiceHeader(document, { company, logo, title: 'SALES INVOICE', number: sale.invoice_no })
+  drawInvoiceHeader(document, { company, title: 'SALES INVOICE', number: sale.invoice_no })
 
   document.setTextColor(23, 32, 51)
   document.setFont('helvetica', 'bold')

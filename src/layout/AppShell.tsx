@@ -3,7 +3,6 @@ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeDollarSign,
   ClipboardList,
-  Boxes,
   Factory,
   Gauge,
   KeyRound,
@@ -25,6 +24,7 @@ import { getCompanyPortal } from '../lib/companyPortal'
 import { useAuth } from '../auth/AuthProvider'
 import { useToast } from '../components/Toast'
 import { Badge, Button, ErrorState, LoadingState } from '../components/UI'
+import { BrandLogo } from '../components/BrandLogo'
 
 const navItems: Array<{ to: string; label: string; icon: typeof Gauge; permissions?: string[] }> = [
   { to: '/dashboard', label: 'Overview', icon: Gauge, permissions: ['dashboard.read'] },
@@ -123,7 +123,7 @@ export function AppShell() {
     <div className="app-shell">
       <aside className={`sidebar ${drawerOpen ? 'sidebar--open' : ''}`} aria-label="Primary navigation">
         <div className="sidebar__brand">
-          <span className="brand-mark"><Boxes size={22} /></span>
+          <BrandLogo className="sidebar__logo" />
           <div><strong>{me.active_company_name}</strong><span>{me.active_company_code} / CK SYS V3</span></div>
           <button className="icon-button sidebar__close" onClick={() => setDrawerOpen(false)} aria-label="Close navigation"><X /></button>
         </div>
@@ -159,6 +159,7 @@ export function AppShell() {
       {drawerOpen ? <button className="mobile-scrim" onClick={() => setDrawerOpen(false)} aria-label="Close navigation" /> : null}
 
       <div className="app-main">
+        <div className="print-brand" aria-hidden="true"><BrandLogo /></div>
         <header className="topbar">
           <button className="icon-button menu-button" onClick={() => setDrawerOpen(true)} aria-label="Open navigation"><Menu /></button>
           <div className="topbar__identity">

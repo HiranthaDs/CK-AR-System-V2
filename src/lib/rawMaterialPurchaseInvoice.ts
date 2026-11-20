@@ -5,9 +5,9 @@ import {
   drawInvoiceFooters,
   drawInvoiceHeader,
   invoiceCompany,
-  invoiceLogoDataUrl,
   openInvoicePdf,
 } from './invoiceBrand'
+import { BRAND_LOGO_URL } from './brand'
 
 export interface RawMaterialPurchaseInvoiceInput {
   purchase: RawMaterialPurchase
@@ -64,10 +64,9 @@ export function rawMaterialPurchaseWhatsAppMessage(purchase: RawMaterialPurchase
 
 export async function createRawMaterialPurchaseInvoicePdf(input: RawMaterialPurchaseInvoiceInput): Promise<Blob> {
   const company = invoiceCompany(input.company)
-  const [{ jsPDF }, { autoTable }, logo] = await Promise.all([
+  const [{ jsPDF }, { autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
-    invoiceLogoDataUrl(company.logo_url),
   ])
   const { purchase } = input
   const document = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true })
@@ -82,7 +81,7 @@ export async function createRawMaterialPurchaseInvoicePdf(input: RawMaterialPurc
     author: company.name,
     creator: 'CK SYS',
   })
-  drawInvoiceHeader(document, { company, logo, title: 'BULK RM INVOICE', number: purchase.invoice_no })
+  drawInvoiceHeader(document, { company, title: 'BULK RM INVOICE', number: purchase.invoice_no })
 
   document.setTextColor(23, 32, 51)
   document.setFontSize(8)
@@ -194,8 +193,8 @@ function printRawMaterialPurchaseInvoiceHtml(input: RawMaterialPurchaseInvoiceIn
   if (!popup) return false
   popup.opener = null
   popup.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(purchase.invoice_no)}</title><style>
-    *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#172033;font:14px Arial,sans-serif}.sheet{width:210mm;min-height:297mm;margin:0 auto;padding:15mm;background:#fff}.head{display:flex;justify-content:space-between;gap:24px;padding-bottom:18px;border-bottom:3px solid #2457d6}.brand{display:flex;gap:14px}.logo{width:64px;height:64px;object-fit:contain}.head h1{margin:0;color:#112a5c;font-size:23px}.head h2{margin:0 0 8px;color:#2457d6;font-size:18px}.muted{color:#657089}.meta{text-align:right}.supplier{display:flex;justify-content:space-between;gap:24px;margin:24px 0}.supplier p{margin:4px 0}table{width:100%;border-collapse:collapse}th,td{padding:10px;border:1px solid #dbe2ed;text-align:left}th{background:#2457d6;color:#fff}.number{text-align:right}.grand{display:flex;justify-content:flex-end;gap:32px;margin:18px 0;font-size:20px}.footer{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:30px}.signature{margin-top:50px;padding-top:8px;border-top:1px solid #657089;text-align:center}@media print{body{background:#fff}.sheet{margin:0;padding:12mm;box-shadow:none}@page{size:A4;margin:0}}
-  </style></head><body><main class="sheet"><header class="head"><div class="brand">${company.logo_url ? `<img class="logo" src="${escapeHtml(company.logo_url)}" alt="">` : ''}<div><h1>${escapeHtml(company.name)}</h1><p class="muted">${escapeHtml(company.address || '')}<br>${escapeHtml(company.phone || '')}<br>${escapeHtml(company.email || '')}</p></div></div><div class="meta"><h2>RAW MATERIAL<br>PURCHASE INVOICE</h2><strong>${escapeHtml(purchase.invoice_no)}</strong><p>${escapeHtml(shortDate(purchase.purchase_date))}</p></div></header><section class="supplier"><div><strong>Supplier</strong><p>${escapeHtml(purchase.supplier_name || 'Not provided')}</p><p>${escapeHtml(purchase.supplier_phone || 'No supplier phone')}</p></div><div class="meta"><strong>Bill / Lorry No.</strong><p>${escapeHtml(purchase.lorry_no || 'Not provided')}</p><p class="muted">${escapeHtml(purchase.reference_no)}</p></div></section><table><thead><tr><th>No.</th><th>Bulk RM Type</th><th class="number">Qty (kg)</th><th class="number">Rate/kg</th><th class="number">Total</th></tr></thead><tbody>${rows}</tbody></table><section class="grand"><span>Grand Total</span><strong>${escapeHtml(money(purchase.grand_total))}</strong></section><section class="footer"><div><strong>Payment Method</strong><p>${escapeHtml(titleCase(purchase.payment_method))}</p><strong>Notes</strong><p>${escapeHtml(notes || 'No notes')}</p><p><strong>Thank you for your business.</strong></p></div><div class="signature">Authorized signature / stamp</div></section></main></body></html>`)
+    *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#172033;font:14px Arial,sans-serif}.sheet{width:210mm;min-height:297mm;margin:0 auto;padding:15mm;background:#fff}.head{display:flex;justify-content:space-between;gap:24px;padding-bottom:18px;border-bottom:3px solid #2457d6}.brand{display:flex;gap:14px}.logo{width:84px;height:auto;align-self:flex-start;object-fit:contain}.head h1{margin:0;color:#112a5c;font-size:23px}.head h2{margin:0 0 8px;color:#2457d6;font-size:18px}.muted{color:#657089}.meta{text-align:right}.supplier{display:flex;justify-content:space-between;gap:24px;margin:24px 0}.supplier p{margin:4px 0}table{width:100%;border-collapse:collapse}th,td{padding:10px;border:1px solid #dbe2ed;text-align:left}th{background:#2457d6;color:#fff}.number{text-align:right}.grand{display:flex;justify-content:flex-end;gap:32px;margin:18px 0;font-size:20px}.footer{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:30px}.signature{margin-top:50px;padding-top:8px;border-top:1px solid #657089;text-align:center}@media print{body{background:#fff}.sheet{margin:0;padding:12mm;box-shadow:none}@page{size:A4;margin:0}}
+  </style></head><body><main class="sheet"><header class="head"><div class="brand"><img class="logo" src="${BRAND_LOGO_URL}" alt="CK Plastic"><div><h1>${escapeHtml(company.name)}</h1><p class="muted">${escapeHtml(company.address || '')}<br>${escapeHtml(company.phone || '')}<br>${escapeHtml(company.email || '')}</p></div></div><div class="meta"><h2>RAW MATERIAL<br>PURCHASE INVOICE</h2><strong>${escapeHtml(purchase.invoice_no)}</strong><p>${escapeHtml(shortDate(purchase.purchase_date))}</p></div></header><section class="supplier"><div><strong>Supplier</strong><p>${escapeHtml(purchase.supplier_name || 'Not provided')}</p><p>${escapeHtml(purchase.supplier_phone || 'No supplier phone')}</p></div><div class="meta"><strong>Bill / Lorry No.</strong><p>${escapeHtml(purchase.lorry_no || 'Not provided')}</p><p class="muted">${escapeHtml(purchase.reference_no)}</p></div></section><table><thead><tr><th>No.</th><th>Bulk RM Type</th><th class="number">Qty (kg)</th><th class="number">Rate/kg</th><th class="number">Total</th></tr></thead><tbody>${rows}</tbody></table><section class="grand"><span>Grand Total</span><strong>${escapeHtml(money(purchase.grand_total))}</strong></section><section class="footer"><div><strong>Payment Method</strong><p>${escapeHtml(titleCase(purchase.payment_method))}</p><strong>Notes</strong><p>${escapeHtml(notes || 'No notes')}</p><p><strong>Thank you for your business.</strong></p></div><div class="signature">Authorized signature / stamp</div></section></main></body></html>`)
   popup.document.close()
   window.setTimeout(() => popup.print(), 250)
   return true

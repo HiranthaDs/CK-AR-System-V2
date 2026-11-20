@@ -8,6 +8,7 @@ import {
   type FinancialReportTable, type FinancialExportTable,
 } from '../lib/financialReport'
 import { downloadFinancialExcel, downloadFinancialPdf } from '../lib/financialReportExport'
+import { BrandLogo } from './BrandLogo'
 import { Badge, Button, Card, EmptyState, InlineNotice, Input, SectionTitle, TableWrap, Tabs } from './UI'
 import { useToast } from './Toast'
 
@@ -110,7 +111,7 @@ export function AccountingPdfStudio({ summary, accountBalances, year, onExit }: 
       <Card><SectionTitle title="Account balances" description="Edit account labels and amounts. All amounts are in LKR." /><RecordEditor table={model.accountBalances} update={update} /></Card>
     </div> : <Card className="studio-full-preview">
       <article className="accounting-pdf-document">
-        <header className="accounting-pdf-header"><div><span>CK SYS · Financial report</span><h1>{report.title}</h1><p>Fiscal year {report.year} · {report.currency}</p></div></header>
+        <header className="accounting-pdf-header"><div><span>CK SYS · Financial report</span><h1>{report.title}</h1><p>Fiscal year {report.year} · {report.currency}</p></div><BrandLogo /></header>
         <main className="accounting-pdf-body">
           {[{ title: 'Income statement', lines: report.incomeStatement }, { title: 'Statement of financial position', lines: report.financialPosition }].map(({ title, lines }) => <section className="accounting-pdf-section" key={title}><h2>{title}</h2><table className="accounting-pdf-table"><thead><tr><th>Description</th><th className="numeric">Amount (LKR)</th></tr></thead><tbody>{lines.map((line) => <tr key={line.label}><th scope="row">{line.label}</th><td className="numeric">{displayFinancialValue(line.value, 'money')}</td></tr>)}</tbody></table></section>)}
           {report.summaryTables.map((table) => <PreviewTable key={table.id} table={table} />)}

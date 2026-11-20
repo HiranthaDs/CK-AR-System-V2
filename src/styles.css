@@ -168,6 +168,12 @@ code,
   gap: 2px;
 }
 
+.sidebar__logo {
+  width: 54px;
+  height: auto;
+  flex: 0 0 auto;
+}
+
 .sidebar__brand strong {
   color: #fff;
   font: 800 1.03rem 'Manrope', sans-serif;
@@ -202,6 +208,8 @@ code,
   width: 31px;
   height: 31px;
 }
+
+.print-brand { display: none; }
 
 .sidebar__nav {
   display: grid;
@@ -1414,7 +1422,7 @@ tbody tr:hover { background: #fafbfe; }
 }
 .rm-invoice-preview__head { padding-bottom: 20px; border-bottom: 3px solid var(--primary); }
 .rm-invoice-preview__brand { display: flex; gap: 14px; }
-.rm-invoice-preview__brand img { width: 62px; height: 62px; object-fit: contain; }
+.rm-invoice-preview__brand img { width: 84px; height: auto; align-self: flex-start; object-fit: contain; }
 .rm-invoice-preview__head h3 { margin: 0 0 7px; font-size: 1.35rem; }
 .rm-invoice-preview__head p,
 .rm-invoice-preview__meta p,
@@ -2120,6 +2128,7 @@ tbody tr:hover { background: #fafbfe; }
 }
 
 .auth-brand .eyebrow { margin-top: 28px; color: #91aff5; }
+.auth-brand__logo { width: clamp(150px, 18vw, 220px); height: auto; }
 .auth-brand h1 { max-width: 640px; margin-bottom: 18px; font-size: clamp(2.2rem, 5vw, 4.3rem); line-height: 1.02; }
 .auth-brand > p { max-width: 560px; color: #aab7ce; font-size: 1rem; line-height: 1.7; }
 
@@ -2163,6 +2172,8 @@ tbody tr:hover { background: #fafbfe; }
   gap: 10px;
   margin-bottom: 34px;
 }
+
+.auth-card__brand img { width: 82px; height: auto; }
 
 .auth-card__brand strong { font: 800 1rem 'Manrope', sans-serif; }
 .auth-card__brand em { color: var(--primary); font-size: 0.68rem; font-style: normal; }
@@ -2414,6 +2425,7 @@ tbody tr:hover { background: #fafbfe; }
 
 .accounting-pdf-header h1 { margin: 5px 0 3px; font-size: 22px; line-height: 1.18; }
 .accounting-pdf-header p { margin: 0; color: #667085; }
+.accounting-pdf-header img { width: 92px; height: auto; flex: 0 0 auto; }
 .accounting-pdf-header svg { color: #b42318; }
 
 .accounting-pdf-warning {
@@ -2563,7 +2575,7 @@ tbody tr:hover { background: #fafbfe; }
 .catalog-page { min-height: 100vh; color: #17243a; background: #f4f7fb; }
 .catalog-header { position: sticky; z-index: 20; top: 0; display: flex; min-height: 70px; align-items: center; justify-content: space-between; gap: 20px; padding: 10px clamp(18px, 5vw, 76px); background: rgb(255 255 255 / 94%); border-bottom: 1px solid #e3e9f1; backdrop-filter: blur(14px); }
 .catalog-brand { display: flex; align-items: center; gap: 11px; color: inherit; }
-.catalog-brand > span { display: grid; width: 42px; height: 42px; place-items: center; color: #fff; background: linear-gradient(145deg, #1f55cd, #163e9a); border-radius: 13px; font-weight: 900; box-shadow: 0 7px 16px rgb(31 85 205 / 24%); }
+.catalog-brand > img { width: 72px; height: auto; }
 .catalog-brand div { display: grid; }
 .catalog-brand strong { font-size: 1rem; }
 .catalog-brand small { color: #687890; }
@@ -2820,6 +2832,8 @@ tbody tr:hover { background: #fafbfe; }
   .toast-region { display: none !important; }
   .app-main { margin: 0; }
   .page-content { width: 100%; max-width: none; padding: 0; }
+  .print-brand { display: block; margin: 0 0 7mm; }
+  .print-brand img { width: 34mm; height: auto; }
   .card,
   .table-wrap { box-shadow: none; break-inside: avoid; }
   .print-area { color: #000; }

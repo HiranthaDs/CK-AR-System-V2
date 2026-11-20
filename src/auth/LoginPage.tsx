@@ -2,13 +2,14 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Building2, Boxes, KeyRound, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
+import { Building2, KeyRound, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
 import { z } from 'zod/v3'
 import { useAuth } from './AuthProvider'
 import { PasswordUpdatedSignInError } from './errors'
 import { Button, Field, Input, LoadingState } from '../components/UI'
 import { useToast } from '../components/Toast'
 import { companyPath, getCompanyPortal } from '../lib/companyPortal'
+import { BrandLogo } from '../components/BrandLogo'
 
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email address.'),
@@ -57,7 +58,7 @@ export function LoginPage() {
     return (
       <main className="auth-page">
         <section className="auth-brand" aria-label="CK SYS company portal selection">
-          <div className="brand-mark brand-mark--large"><Boxes /></div>
+          <BrandLogo className="auth-brand__logo" />
           <span className="eyebrow">CK SYS V3</span>
           <h1>Choose your company portal.</h1>
           <p>CK Plastics and AR Plastics keep separate company data and accounting records. Sign-in succeeds only for a portal assigned by a super administrator.</p>
@@ -69,7 +70,7 @@ export function LoginPage() {
         </section>
         <section className="auth-panel">
           <div className="auth-card">
-            <div className="auth-card__brand"><span className="brand-mark"><Boxes /></span><strong>CK SYS <em>V3</em></strong></div>
+            <div className="auth-card__brand"><BrandLogo /><strong>CK SYS <em>V3</em></strong></div>
             <div className="auth-card__heading"><h2>Select a company</h2><p>You will be sent to that company&apos;s own login URL.</p></div>
             <div className="form-stack">
               <Link className="button button--primary button--medium" to="/ck/login"><Building2 size={18} /> CK Plastics login</Link>
@@ -136,7 +137,7 @@ export function LoginPage() {
   return (
     <main className="auth-page">
       <section className="auth-brand" aria-label={`${portal.name} product overview`}>
-        <div className="brand-mark brand-mark--large"><Boxes /></div>
+        <BrandLogo className="auth-brand__logo" />
         <span className="eyebrow">{portal.name} · Secure company portal</span>
         <h1>{portal.name} operations, kept separate.</h1>
         <p>Use your Supabase Authentication email and password. Your account must have active access to {portal.name}.</p>
@@ -149,7 +150,7 @@ export function LoginPage() {
 
       <section className="auth-panel">
         <div className="auth-card">
-          <div className="auth-card__brand"><span className="brand-mark"><Boxes /></span><strong>{portal.companyCode} SYS <em>V3</em></strong></div>
+          <div className="auth-card__brand"><BrandLogo /><strong>{portal.companyCode} SYS <em>V3</em></strong></div>
           {isRecoveryRoute && auth.loading ? (
             <LoadingState label="Validating your recovery link..." />
           ) : auth.recovery && auth.session ? (

@@ -9,7 +9,13 @@ import { ToastProvider } from './components/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ConfigurationError } from './components/ConfigurationError'
 import { App } from './App'
+import { BRAND_LOGO_URL } from './lib/brand'
 import './styles.css'
+
+const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]') ?? document.createElement('link')
+favicon.rel = 'icon'
+favicon.href = BRAND_LOGO_URL
+if (!favicon.parentNode) document.head.appendChild(favicon)
 
 const queryClient = new QueryClient({
   defaultOptions: {

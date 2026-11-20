@@ -1,5 +1,6 @@
 import type { jsPDF } from 'jspdf'
 import type { CompanyProfile } from '../types/api'
+import { addBrandLogo } from './brand'
 
 export const CK_INVOICE_DETAILS = {
   name: 'CK Plastic',
@@ -18,51 +19,22 @@ export function invoiceCompany(company?: Partial<CompanyProfile> | null) {
   }
 }
 
-export async function invoiceLogoDataUrl(url: string | null | undefined) {
-  if (!url) return null
-  try {
-    const response = await fetch(url, { mode: 'cors', credentials: 'omit' })
-    if (!response.ok) return null
-    const blob = await response.blob()
-    return await new Promise<string | null>((resolve) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
-  } catch {
-    return null
-  }
-}
-
 export function drawInvoiceHeader(document: jsPDF, options: {
   company: ReturnType<typeof invoiceCompany>
-  logo: string | null
   title: string
   number: string
 }) {
-  const { company, logo, title, number } = options
+  const { company, title, number } = options
   const width = document.internal.pageSize.getWidth()
   const margin = 14
   document.setFillColor(17, 42, 92)
   document.rect(0, 0, width, 43, 'F')
-  let companyX: number
-  if (logo) {
-    try {
-      const format = logo.startsWith('data:image/jpeg') ? 'JPEG' : logo.startsWith('data:image/webp') ? 'WEBP' : 'PNG'
-      document.addImage(logo, format, margin, 8, 24, 24, undefined, 'FAST')
-      companyX = 43
-    } catch {
-      companyX = margin
-    }
-  } else {
-    document.setFillColor(36, 87, 214)
-    document.roundedRect(margin, 8, 24, 24, 3, 3, 'F')
-    document.setTextColor(255, 255, 255)
-    document.setFont('helvetica', 'bold')
-    document.setFontSize(12)
-    document.text('CK', margin + 12, 23, { align: 'center' })
-    companyX = 43
+  let companyX = margin
+  try {
+    addBrandLogo(document, { x: margin, y: 8, maxWidth: 31, maxHeight: 22 })
+    companyX = 50
+  } catch {
+    // Keep the document usable if a PDF renderer cannot decode the embedded image.
   }
   document.setTextColor(255, 255, 255)
   document.setFont('helvetica', 'bold')

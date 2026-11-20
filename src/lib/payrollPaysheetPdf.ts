@@ -1,5 +1,6 @@
 import type { Employee, Payroll, PayrollLine } from '../types/api'
 import { money, monthLabel, numberValue, shortDate, titleCase } from './format'
+import { addBrandLogo } from './brand'
 
 export interface PayrollPaysheetPdfInput {
   payrolls: Payroll[]
@@ -61,12 +62,13 @@ export async function createPayrollPaysheetPdfBlob(input: PayrollPaysheetPdfInpu
   })
   document.setFillColor(23, 32, 51)
   document.rect(0, 0, pageWidth, 34, 'F')
+  addBrandLogo(document, { x: margin, y: 7, maxWidth: 32, maxHeight: 20 })
   document.setTextColor(255, 255, 255)
   document.setFont('helvetica', 'bold')
   document.setFontSize(18)
-  document.text('MONTHLY PAYSHEET', margin, 16)
+  document.text('MONTHLY PAYSHEET', margin + 38, 16)
   document.setFontSize(10)
-  document.text(input.companyName, margin, 24)
+  document.text(input.companyName, margin + 38, 24)
   document.setTextColor(23, 32, 51)
   document.setFontSize(12)
   document.text(employeeName, margin, 45)

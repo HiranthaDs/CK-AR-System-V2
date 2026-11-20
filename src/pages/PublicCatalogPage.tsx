@@ -10,6 +10,7 @@ import { Dialog } from '../components/Dialog'
 import { makeRequestId, publicApi } from '../lib/api'
 import { money, numberValue } from '../lib/format'
 import type { PublicCatalogItem, PublicOrderReceipt } from '../types/api'
+import { BrandLogo } from '../components/BrandLogo'
 
 const orderSchema = z.object({
   customer_name: z.string().min(2, 'Enter your name.').max(160),
@@ -84,7 +85,7 @@ export function PublicCatalogPage() {
 
   return <div className="catalog-page">
     <header className="catalog-header">
-      <Link to="/catalog" className="catalog-brand"><span>CK</span><div><strong>CK Plastics</strong><small>Product catalogue</small></div></Link>
+      <Link to="/catalog" className="catalog-brand"><BrandLogo /><div><strong>CK Plastics</strong><small>Product catalogue</small></div></Link>
       <div className="catalog-header__actions"><span><ShoppingBag size={17} /> {itemCount} item{itemCount === 1 ? '' : 's'}</span><Link to="/login">Staff login <ChevronRight size={15} /></Link></div>
     </header>
 

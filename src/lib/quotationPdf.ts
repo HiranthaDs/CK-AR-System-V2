@@ -5,7 +5,6 @@ import {
   drawInvoiceFooters,
   drawInvoiceHeader,
   invoiceCompany,
-  invoiceLogoDataUrl,
   openInvoicePdf,
 } from './invoiceBrand'
 
@@ -40,10 +39,9 @@ export function quotationWhatsAppMessage(quotation: Quotation) {
 
 export async function createQuotationPdfBlob(input: QuotationPdfInput): Promise<Blob> {
   const company = invoiceCompany(input.company ?? (input.companyName ? { name: input.companyName } : null))
-  const [{ jsPDF }, { autoTable }, logo] = await Promise.all([
+  const [{ jsPDF }, { autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
-    invoiceLogoDataUrl(company.logo_url),
   ])
   const { quotation } = input
   const document = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true })
@@ -53,7 +51,7 @@ export async function createQuotationPdfBlob(input: QuotationPdfInput): Promise<
   type AutoTableDocument = typeof document & { lastAutoTable?: { finalY: number } }
 
   document.setProperties({ title: `Quotation ${quotation.quotation_no}`, subject: `Quotation for ${quotation.customer_name}`, author: company.name, creator: 'CK SYS' })
-  drawInvoiceHeader(document, { company, logo, title: 'QUOTATION', number: quotation.quotation_no })
+  drawInvoiceHeader(document, { company, title: 'QUOTATION', number: quotation.quotation_no })
 
   document.setTextColor(23, 32, 51)
   document.setFont('helvetica', 'bold')
