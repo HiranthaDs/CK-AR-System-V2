@@ -33,3 +33,19 @@ export function chipStockNameForConversion(conversionType: string) {
   const shortName = normalized.split(/\s+/)[0]
   return shortName ? `${shortName} Chip` : ''
 }
+
+export function chipStockBaseNameForConversion(conversionType: string, defaultChipName?: string | null) {
+  const chipName = defaultChipName?.trim() || chipStockNameForConversion(conversionType)
+  return chipName.replace(/\s+chip$/i, '').trim()
+}
+
+function materialKey(value: string) {
+  const shortName = value.split(/\s+-\s+/, 1)[0]?.replace(/\s+bulk$/i, '').trim() ?? ''
+  return shortName.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+export function conversionTypeForBulkMaterial<T extends { name: string }>(types: readonly T[], bulkMaterialName: string) {
+  const bulkKey = materialKey(bulkMaterialName)
+  if (!bulkKey) return undefined
+  return types.find((type) => materialKey(type.name.split(/\s+bulk\s+to\s+/i, 1)[0] ?? '') === bulkKey)
+}

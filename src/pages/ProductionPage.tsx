@@ -24,6 +24,7 @@ import {
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { z } from 'zod/v3'
 import { api } from '../lib/api'
+import { chipStockBaseNameForConversion, conversionTypeForBulkMaterial } from '../lib/conversionSetup'
 import { localIsoDate, money, numberValue, quantity, recordValue, shortDate, titleCase } from '../lib/format'
 import type { BulkRmRate, Conversion, ConversionType, Employee, InventoryItem, InventoryPosition, MutationReceipt, Page, PieceworkRate, ProductionRun, ProductionSummary, RawMaterialPurchase } from '../types/api'
 import { useToast } from '../components/Toast'
@@ -104,6 +105,28 @@ const productionSchema = z.object({
 
 type ConversionValues = z.infer<typeof conversionSchema>
 type ProductionValues = z.infer<typeof productionSchema>
+type ConversionMutationInput = { id?: string; body: Record<string, unknown> }
+
+function conversionDefaults(record?: Conversion | null): ConversionValues {
+  const workers = record?.conversion_workers ?? record?.workers ?? []
+  return {
+    conversion_date: record?.conversion_date ?? record?.date ?? localIsoDate(),
+    conversion_type_id: record?.conversion_type_id ?? '',
+    source_item_id: record?.source_item_id ?? '',
+    chip_name: record?.output_item?.name ?? record?.output_item_name ?? '',
+    chip_type: record?.conversion_type?.name ?? record?.chip_type ?? '',
+    input_kg: numberValue(record?.input_kg ?? record?.source_quantity_kg),
+    output_kg: numberValue(record?.output_kg ?? record?.output_quantity_kg),
+    overhead_cost: numberValue(record?.overhead_cost),
+    workers: workers.length ? workers.map((worker) => ({
+      employee_id: worker.employee_id,
+      rate_id: worker.rate_id ?? '',
+      task: worker.task,
+      quantity_kg: numberValue(worker.quantity_kg),
+      rate_per_kg: numberValue(worker.rate_per_kg),
+    })) : [{ employee_id: '', rate_id: '', task: '', quantity_kg: 0, rate_per_kg: 0 }],
+  }
+}
 
 const pageSize = 30
 
@@ -124,6 +147,7 @@ export function ProductionPage() {
   const [editingPurchase, setEditingPurchase] = useState<RawMaterialPurchase | null>(null)
   const [editingBulkRate, setEditingBulkRate] = useState<BulkRmRate | null>(null)
   const [deactivatingBulkRate, setDeactivatingBulkRate] = useState<BulkRmRate | null>(null)
+  const [editingConversion, setEditingConversion] = useState<Conversion | null>(null)
   const [editingRate, setEditingRate] = useState<PieceworkRate | null>(null)
   const [editingRun, setEditingRun] = useState<ProductionRun | null>(null)
   const [editingProduct, setEditingProduct] = useState<InventoryItem | null>(null)
@@ -195,8 +219,17 @@ export function ProductionPage() {
     onError: (error) => toast.error('Bulk RM rate not deactivated', error instanceof Error ? error.message : 'Try again.'),
   })
   const conversionMutation = useMutation({
-    mutationFn: (body: Record<string, unknown>) => api.post<MutationReceipt, Record<string, unknown>>('/conversions', body),
-    onSuccess: async () => { setConversionOpen(false); await invalidate(); toast.success('Conversion posted', 'Bulk stock, chip stock, and piecework accruals are updated.') },
+    mutationFn: ({ id, body }: ConversionMutationInput) => id
+      ? api.patch<MutationReceipt, Record<string, unknown>>(`/conversions/${id}`, body)
+      : api.post<MutationReceipt, Record<string, unknown>>('/conversions', body),
+    onSuccess: async (_, variables) => {
+      setConversionOpen(false)
+      setEditingConversion(null)
+      await invalidate()
+      toast.success(variables.id ? 'Conversion corrected' : 'Conversion posted', variables.id
+        ? 'The original remains reversed in history while stock, accounting, and open earnings use the corrected replacement.'
+        : 'Bulk stock, chip stock, and piecework accruals are updated.')
+    },
     onError: (error) => toast.error('Conversion not saved', error.message),
   })
   const runMutation = useMutation({
@@ -226,6 +259,7 @@ export function ProductionPage() {
 
   const openPurchase = (record?: RawMaterialPurchase) => { setEditingPurchase(record ?? null); setPurchaseOpen(true) }
   const openBulkRate = (record?: BulkRmRate) => { setEditingBulkRate(record ?? null); setBulkRateOpen(true) }
+  const openConversion = (record?: Conversion) => { setEditingConversion(record ?? null); setConversionOpen(true) }
   const openRate = (record?: PieceworkRate) => { setEditingRate(record ?? null); setRateOpen(true) }
   const openRun = (record?: ProductionRun, product?: InventoryItem) => { setEditingRun(record ?? null); setProductionProduct(product ?? null); setRunOpen(true) }
 
@@ -246,14 +280,14 @@ export function ProductionPage() {
       {tab === 'products' ? <ProductList query={productsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => { setEditingProduct(null); setProductOpen(true) }} onEdit={(product) => { setEditingProduct(product); setProductOpen(true) }} onReverse={setReversingProduct} onProduce={(product) => openRun(undefined, product)} /> : null}
       {tab === 'purchases' ? <PurchaseList query={purchasesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openPurchase()} onAddRate={() => openBulkRate()} onEdit={openPurchase} onInvoice={(record) => setInvoicePurchaseId(record.id)} onReverse={(record) => setReverseTarget({ type: 'rm-purchases', id: record.id, reference: record.invoice_no ?? record.reference_no ?? record.id })} /> : null}
       {tab === 'bulk-rates' ? <BulkRateList query={bulkRatesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openBulkRate()} onEdit={openBulkRate} onDeactivate={setDeactivatingBulkRate} /> : null}
-      {tab === 'conversions' ? <ConversionList query={conversionsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => setConversionOpen(true)} onAddType={() => setConversionTypeOpen(true)} onAddRate={() => openRate()} onReverse={(record) => setReverseTarget({ type: 'conversions', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
+      {tab === 'conversions' ? <ConversionList query={conversionsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openConversion()} onAddType={() => setConversionTypeOpen(true)} onAddRate={() => openRate()} onEdit={openConversion} onReverse={(record) => setReverseTarget({ type: 'conversions', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
       {tab === 'rates' ? <RateList query={ratesQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openRate()} onEdit={openRate} onReverse={(record) => setReverseTarget({ type: 'piecework-rates', id: record.id, reference: record.work_type ?? record.id })} /> : null}
       {tab === 'runs' ? <RunList query={runsQuery} search={search} setSearch={setSearch} page={page} setPage={setPage} onAdd={() => openRun()} onEdit={openRun} onReverse={(record) => setReverseTarget({ type: 'production', id: record.id, reference: record.reference_no ?? record.id })} /> : null}
 
       <BulkRmPurchaseDialog open={purchaseOpen} record={editingPurchase} mutation={purchaseMutation} onClose={() => { setPurchaseOpen(false); setEditingPurchase(null) }} />
       <BulkRmRateDialog open={bulkRateOpen} record={editingBulkRate} onClose={() => { setBulkRateOpen(false); setEditingBulkRate(null) }} />
       <BulkRmInvoiceDialog purchaseId={invoicePurchaseId} onClose={() => setInvoicePurchaseId(null)} />
-      <ConversionDialog open={conversionOpen} mutation={conversionMutation} onClose={() => setConversionOpen(false)} />
+      <ConversionDialog open={conversionOpen} record={editingConversion} mutation={conversionMutation} onClose={() => { setConversionOpen(false); setEditingConversion(null) }} />
       <ConversionTypeDialog open={conversionTypeOpen} record={null} onClose={() => setConversionTypeOpen(false)} />
       <PieceworkRateDialog open={rateOpen} record={editingRate} onClose={() => { setRateOpen(false); setEditingRate(null) }} />
       {productOpen ? <ProductDialog open record={editingProduct} mutation={productMutation} onClose={() => { setProductOpen(false); setEditingProduct(null) }} /> : null}
@@ -323,9 +357,9 @@ function BulkRateList({ query, search, setSearch, page, setPage, onAdd, onEdit, 
   return <Card><SectionTitle title="Bulk RM rate master" description="Effective-dated material rates populate new lorry and consignment purchases automatically." actions={<Button icon={Plus} onClick={onAdd}>Add rate</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Search Bulk RM type" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rates.length ? <><TableWrap><table><thead><tr><th>Bulk RM type</th><th className="numeric">Rate / kg</th><th>Effective period</th><th>Status</th><th>Notes</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rates.map((rate) => <tr key={rate.id}><td><strong>{rate.material_type}</strong></td><td className="numeric">{money(rate.rate_per_kg)}</td><td>{shortDate(rate.effective_from)}<span className="table-subtext">to {rate.effective_to ? shortDate(rate.effective_to) : 'Open ended'}</span></td><td><Badge tone={rate.status === 'active' ? 'success' : 'neutral'}>{titleCase(rate.status)}</Badge></td><td>{rate.notes || '—'}</td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} onClick={() => onEdit(rate)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={rate.status === 'inactive'} onClick={() => onDeactivate(rate)}>Deactivate</Button></div></td></tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <BulkRmRateListEmpty onAdd={onAdd} />}</Card>
 }
 
-function ConversionList({ query, search, setSearch, page, setPage, onAdd, onAddType, onAddRate, onReverse }: { query: ReturnType<typeof useQuery<Page<Conversion>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onAddType: () => void; onAddRate: () => void; onReverse: (record: Conversion) => void }) {
+function ConversionList({ query, search, setSearch, page, setPage, onAdd, onAddType, onAddRate, onEdit, onReverse }: { query: ReturnType<typeof useQuery<Page<Conversion>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onAddType: () => void; onAddRate: () => void; onEdit: (record: Conversion) => void; onReverse: (record: Conversion) => void }) {
   const rows = query.data?.items ?? []
-  return <Card><SectionTitle title="Bulk-to-chip conversions" description="Each batch consumes bulk material, produces chip stock, and creates dated employee earnings for payroll." actions={<div className="row-actions"><Button variant="secondary" icon={Plus} onClick={onAddType}>Add type</Button><Button variant="secondary" icon={Plus} onClick={onAddRate}>Add rate</Button><Button icon={Plus} onClick={onAdd}>New conversion</Button></div>} /><InlineNotice tone="success" title="Worker allocations flow to payroll">Every posted worker amount appears in Staff & payroll → Open earnings for that employee and can be claimed in a daily or monthly payroll.</InlineNotice><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Material, chip, worker, or reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Conversion</th><th className="numeric">Input</th><th className="numeric">Output</th><th className="numeric">Waste</th><th className="numeric">Labor earning</th><th>Workers</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => { const workers = row.conversion_workers ?? row.workers ?? []; const input = numberValue(row.input_kg ?? row.source_quantity_kg); const output = numberValue(row.output_kg ?? row.output_quantity_kg); return <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.conversion_date ?? row.date)}</span></td><td><strong>{recordValue<string>(row, 'source_item_name', 'source_material_name') ?? 'Bulk material'} → {recordValue<string>(row, 'output_item_name', 'chip_name') ?? 'Chip'}</strong><span className="table-subtext">{row.conversion_type?.name ?? row.chip_type ?? ''}</span></td><td className="numeric">{quantity(input)} kg</td><td className="numeric">{quantity(output)} kg</td><td className="numeric">{quantity(row.waste_quantity_kg ?? input - output)} kg</td><td className="numeric">{money(row.labor_cost ?? workers.reduce((sum, worker) => sum + numberValue(worker.amount), 0))}</td><td><Badge tone="purple">{workers.length} earning{workers.length === 1 ? '' : 's'}</Badge></td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge></td><td><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></td></tr> })}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No conversion batches match the current search." />}</Card>
+  return <Card><SectionTitle title="Bulk-to-chip conversions" description="Each batch consumes bulk material, produces chip stock, and creates dated employee earnings for payroll." actions={<div className="row-actions"><Button variant="secondary" icon={Plus} onClick={onAddType}>Add type</Button><Button variant="secondary" icon={Plus} onClick={onAddRate}>Add rate</Button><Button icon={Plus} onClick={onAdd}>New conversion</Button></div>} /><InlineNotice tone="success" title="Worker allocations flow to payroll">Every posted worker amount appears in Staff & payroll → Open earnings for that employee and can be claimed in a daily or monthly payroll.</InlineNotice><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Material, chip, worker, or reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Conversion</th><th>Conversion type</th><th className="numeric">Input</th><th className="numeric">Output</th><th className="numeric">Waste</th><th className="numeric">Labor earning</th><th>Workers</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => { const workers = row.conversion_workers ?? row.workers ?? []; const input = numberValue(row.input_kg ?? row.source_quantity_kg); const output = numberValue(row.output_kg ?? row.output_quantity_kg); return <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.conversion_date ?? row.date)}</span>{row.replaces_id ? <span className="table-subtext">Correction entry</span> : null}</td><td><strong>{recordValue<string>(row, 'source_item_name', 'source_material_name') ?? row.source_item?.name ?? 'Bulk material'} → {recordValue<string>(row, 'output_item_name', 'chip_name') ?? row.output_item?.name ?? 'Chip'}</strong></td><td><strong>{row.conversion_type?.name ?? row.chip_type ?? 'Manual'}</strong></td><td className="numeric">{quantity(input)} kg</td><td className="numeric">{quantity(output)} kg</td><td className="numeric">{quantity(row.waste_quantity_kg ?? input - output)} kg</td><td className="numeric">{money(row.labor_cost ?? workers.reduce((sum, worker) => sum + numberValue(worker.amount), 0))}</td><td><Badge tone="purple">{workers.length} earning{workers.length === 1 ? '' : 's'}</Badge></td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge>{row.reversal_reason ? <span className="table-subtext">{row.reversal_reason}</span> : null}</td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr> })}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No conversion batches match the current search." />}</Card>
 }
 
 function RateList({ query, search, setSearch, page, setPage, onAdd, onEdit, onReverse }: { query: ReturnType<typeof useQuery<Page<PieceworkRate>>>; search: string; setSearch: (value: string) => void; page: number; setPage: (value: number) => void; onAdd: () => void; onEdit: (record: PieceworkRate) => void; onReverse: (record: PieceworkRate) => void }) {
@@ -338,10 +372,9 @@ function RunList({ query, search, setSearch, page, setPage, onAdd, onEdit, onRev
   return <Card><SectionTitle title="Master production log" description="Posted chip consumption and finished-goods output with immutable costing snapshots." actions={<Button icon={Plus} onClick={onAdd}>Record production</Button>} /><div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Product, machine, operator, or reference" /></div>{query.isLoading ? <LoadingState /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <><TableWrap><table><thead><tr><th>Date / reference</th><th>Machine / operator</th><th>Output</th><th className="numeric">Quantity</th><th>Chip input</th><th className="numeric">Total cost</th><th className="numeric">Unit cost</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((row) => { const output = numberValue(row.output_quantity ?? row.quantity ?? row.qty); const total = numberValue(row.total_cost); return <tr key={row.id}><td><strong className="mono">{row.reference_no ?? '—'}</strong><span className="table-subtext">{shortDate(row.production_date ?? row.date)}</span></td><td><strong>{row.machine ?? 'No machine'}</strong><span className="table-subtext">{row.operator_name ?? recordValue<string>(row, 'employee_name') ?? '—'} · {row.shift ?? 'No shift'}</span></td><td><strong>{row.finished_item_name ?? row.finished_item?.name ?? row.item_name ?? recordValue<string>(row, 'output_item_name') ?? 'Finished item'}</strong><span className="table-subtext">{row.finished_item?.product_type || 'No type'} · {money(row.finished_item?.selling_price)} selling</span></td><td className="numeric">{quantity(output)}</td><td>{row.chip_name ?? row.raw_material_name ?? recordValue<string>(row, 'input_item_name') ?? 'Chip'}<span className="table-subtext">{quantity(row.input_kg ?? row.raw_material_quantity_kg)} kg</span></td><td className="numeric">{money(total)}</td><td className="numeric">{money(row.unit_cost ?? (output ? total / output : 0))}</td><td><Badge tone={row.status === 'reversed' ? 'danger' : 'success'}>{titleCase(row.status ?? 'posted')}</Badge></td><td><div className="row-actions"><Button variant="ghost" size="small" icon={Pencil} disabled={row.status === 'reversed'} onClick={() => onEdit(row)}>Edit</Button><Button variant="ghost" size="small" icon={RotateCcw} disabled={row.status === 'reversed'} onClick={() => onReverse(row)}>Reverse</Button></div></td></tr> })}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></> : <EmptyState message="No production runs match the current search." />}</Card>
 }
 
-function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, Record<string, unknown>>>; onClose: () => void }) {
+function ConversionDialog({ open, record, mutation, onClose }: { open: boolean; record: Conversion | null; mutation: ReturnType<typeof useMutation<MutationReceipt, Error, ConversionMutationInput>>; onClose: () => void }) {
   const [selectedBulk, setSelectedBulk] = useState<InventoryPosition | undefined>()
-  const defaultValues: ConversionValues = { conversion_date: localIsoDate(), conversion_type_id: '', source_item_id: '', chip_name: '', chip_type: '', input_kg: 0, output_kg: 0, overhead_cost: 0, workers: [{ employee_id: '', rate_id: '', task: '', quantity_kg: 0, rate_per_kg: 0 }] }
-  const form = useForm<ConversionValues>({ resolver: zodResolver(conversionSchema), defaultValues })
+  const form = useForm<ConversionValues>({ resolver: zodResolver(conversionSchema), defaultValues: conversionDefaults(record) })
   const fields = useFieldArray({ control: form.control, name: 'workers' })
   const typesQuery = useQuery({
     queryKey: ['conversion-types', 'conversion-entry'],
@@ -357,10 +390,10 @@ function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation
   })
   useEffect(() => {
     if (open) {
-      form.reset(defaultValues)
+      form.reset(conversionDefaults(record))
       setSelectedBulk(undefined)
     }
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, record?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const watched = form.watch()
   const types = typesQuery.data?.items ?? []
   const selectedTypeId = watched.conversion_type_id ?? ''
@@ -375,6 +408,9 @@ function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation
     : effectiveRates
   const labor = watched.workers.reduce((sum, worker) => sum + numberValue(worker.quantity_kg) * numberValue(worker.rate_per_kg), 0)
   const waste = numberValue(watched.input_kg) - numberValue(watched.output_kg)
+  const availableInputKg = selectedBulk
+    ? numberValue(selectedBulk.quantity_on_hand) + (record?.source_item_id === selectedBulk.item_id ? numberValue(record.input_kg) : 0)
+    : undefined
   const chooseRate = (index: number, rateId: string) => {
     if (rateId === '__manual__') {
       form.setValue(`workers.${index}.rate_id`, '', { shouldValidate: true })
@@ -390,13 +426,15 @@ function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation
   const chooseType = (value: string) => {
     if (value === '__manual__') {
       form.setValue('conversion_type_id', '')
+      form.setValue('chip_type', '', { shouldValidate: true })
+      form.setValue('chip_name', '', { shouldValidate: true })
       return
     }
     const type = types.find((item) => item.id === value)
     form.setValue('conversion_type_id', value, { shouldValidate: true })
     if (!type) return
     form.setValue('chip_type', type.name, { shouldValidate: true })
-    form.setValue('chip_name', type.default_chip_name ?? '', { shouldValidate: true })
+    form.setValue('chip_name', chipStockBaseNameForConversion(type.name, type.default_chip_name), { shouldValidate: true })
     const matchingRates = effectiveRates.filter((rate) => rate.conversion_type_id === value || (!rate.conversion_type_id && rate.work_type === type.name))
     const validIds = new Set(matchingRates.map((rate) => rate.id))
     watched.workers.forEach((worker, index) => {
@@ -409,6 +447,11 @@ function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation
       }
     })
   }
+  useEffect(() => {
+    if (!selectedBulk || !types.length) return
+    const matchingType = conversionTypeForBulkMaterial(types, selectedBulk.item_name)
+    if (matchingType && matchingType.id !== form.getValues('conversion_type_id')) chooseType(matchingType.id)
+  }, [selectedBulk?.item_id, typesQuery.data]) // eslint-disable-line react-hooks/exhaustive-deps
   const appendWorker = () => {
     const onlyRate = visibleRates.length === 1 ? visibleRates[0] : undefined
     fields.append({
@@ -419,19 +462,20 @@ function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation
       rate_per_kg: numberValue(onlyRate?.rate_per_kg),
     })
   }
-  const submit = form.handleSubmit((values) => mutation.mutate({ conversion_date: values.conversion_date, conversion_type_id: values.conversion_type_id || null, source_item_id: values.source_item_id, chip_name: values.chip_name, chip_type: selectedType?.name ?? (values.chip_type || null), input_kg: values.input_kg, output_kg: values.output_kg, overhead_cost: values.overhead_cost, workers: values.workers.map((worker) => ({ employee_id: worker.employee_id, rate_id: worker.rate_id || null, task: worker.task, quantity_kg: worker.quantity_kg, rate_per_kg: worker.rate_per_kg, amount: Math.round(worker.quantity_kg * worker.rate_per_kg * 100) / 100 })) }))
+  const submit = form.handleSubmit((values) => {
+    if (availableInputKg != null && values.input_kg > availableInputKg) {
+      form.setError('input_kg', { type: 'max', message: `Input cannot exceed the available ${quantity(availableInputKg)} kg.` })
+      return
+    }
+    mutation.mutate({
+      ...(record ? { id: record.id } : {}),
+      body: { conversion_date: values.conversion_date, conversion_type_id: values.conversion_type_id || null, source_item_id: values.source_item_id, chip_name: values.chip_name, chip_type: selectedType?.name ?? (values.chip_type || null), input_kg: values.input_kg, output_kg: values.output_kg, overhead_cost: values.overhead_cost, workers: values.workers.map((worker) => ({ employee_id: worker.employee_id, rate_id: worker.rate_id || null, task: worker.task, quantity_kg: worker.quantity_kg, rate_per_kg: worker.rate_per_kg, amount: Math.round(worker.quantity_kg * worker.rate_per_kg * 100) / 100 })) },
+    })
+  })
   return (
-    <Dialog open={open} onClose={onClose} title="Post bulk-to-chip conversion" description="Choose saved setup values for fast entry, or select Manual to type one-off data." size="wide" closeDisabled={mutation.isPending} footer={<><Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>Cancel</Button><Button icon={Recycle} loading={mutation.isPending} onClick={() => void submit()}>Post conversion & earnings</Button></>}>
+    <Dialog open={open} onClose={onClose} title={record ? 'Correct bulk-to-chip conversion' : 'Post bulk-to-chip conversion'} description={record ? 'The original record and its accounting trail remain intact as a reversal; this saves a linked corrected replacement.' : 'Choose saved setup values for fast entry, or select Manual to type one-off data.'} size="wide" closeDisabled={mutation.isPending} footer={<><Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>Cancel</Button><Button icon={Recycle} loading={mutation.isPending} onClick={() => void submit()}>{record ? 'Save correction' : 'Post conversion & earnings'}</Button></>}>
       <form className="form-stack" onSubmit={(event) => void submit(event)}>
         <div className="form-grid form-grid--three">
-          <Field label="Conversion date" required><Input type="date" {...form.register('conversion_date')} /></Field>
-          <Field label="Conversion type" required hint={typesQuery.isError ? 'Saved types could not be loaded. Choose Manual to continue.' : undefined}>
-            <Select aria-label="Conversion type" value={selectedTypeId || '__manual__'} onChange={(event) => chooseType(event.target.value)}>
-              <option value="__manual__">Manual — type your own</option>
-              {typesQuery.isLoading ? <option value="" disabled>Loading saved types…</option> : null}
-              {types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </Select>
-          </Field>
           <RemoteSelect<InventoryPosition>
             label="Bulk material"
             endpoint="/inventory/bulk"
@@ -440,16 +484,29 @@ function ConversionDialog({ open, mutation, onClose }: { open: boolean; mutation
             onChange={(value) => form.setValue('source_item_id', value, { shouldValidate: true })}
             onSelectItem={(item) => {
               setSelectedBulk(item)
-              if (item) form.setValue('input_kg', numberValue(item.quantity_on_hand), { shouldValidate: true })
+              if (!item) return
+              const available = numberValue(item.quantity_on_hand) + (record?.source_item_id === item.item_id ? numberValue(record.input_kg) : 0)
+              form.setValue('input_kg', available, { shouldValidate: true })
+              const matchingType = conversionTypeForBulkMaterial(types, item.item_name)
+              chooseType(matchingType?.id ?? '__manual__')
             }}
             optionValue={(item) => item.item_id}
             optionLabel={(item) => `${item.item_name} · ${quantity(item.quantity_on_hand)} kg available`}
+            selectedLabel={record?.source_item?.name ?? record?.source_item_name ?? record?.source_material_name}
             required
             error={form.formState.errors.source_item_id?.message}
           />
-          <Field label="Input kg" required error={form.formState.errors.input_kg?.message} hint={selectedBulk ? `${quantity(selectedBulk.quantity_on_hand)} kg currently available; adjust this batch quantity if needed.` : undefined}><Input type="number" min="0.000001" max={selectedBulk ? numberValue(selectedBulk.quantity_on_hand) : undefined} step="0.001" {...form.register('input_kg')} /></Field>
-          <Field label="Chip stock name" required error={form.formState.errors.chip_name?.message}><Input {...form.register('chip_name')} /></Field>
-          {!selectedTypeId ? <Field label="Manual conversion type" required error={form.formState.errors.chip_type?.message}><Input {...form.register('chip_type')} placeholder="Describe this conversion" /></Field> : null}
+          <Field label="Conversion type" required hint={typesQuery.isError ? 'Saved types could not be loaded. Choose Manual to continue.' : undefined}>
+            <Select aria-label="Conversion type" value={selectedTypeId || '__manual__'} onChange={(event) => chooseType(event.target.value)}>
+              <option value="__manual__">Manual — type your own</option>
+              {typesQuery.isLoading ? <option value="" disabled>Loading saved types…</option> : null}
+              {types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Conversion date" required><Input type="date" {...form.register('conversion_date')} /></Field>
+          <Field label="Input kg" required error={form.formState.errors.input_kg?.message} hint={availableInputKg != null ? `${quantity(availableInputKg)} kg available for this entry; a lower quantity is allowed.` : undefined}><Input aria-label="Input kg" type="number" min="0.000001" max={availableInputKg} step="0.001" {...form.register('input_kg')} /></Field>
+          <Field label="Chip stock name" required className="field--span-2" error={form.formState.errors.chip_name?.message}><Input {...form.register('chip_name')} readOnly /></Field>
+          {!selectedTypeId ? <Field label="Manual conversion type" required error={form.formState.errors.chip_type?.message}><Input value={form.watch('chip_type')} onChange={(event) => { const value = event.target.value; form.setValue('chip_type', value, { shouldValidate: true }); form.setValue('chip_name', chipStockBaseNameForConversion(value), { shouldValidate: true }) }} placeholder="Describe this conversion" /></Field> : null}
           <Field label="Output kg" required error={form.formState.errors.output_kg?.message}><Input type="number" min="0.000001" step="0.001" {...form.register('output_kg')} /></Field>
           <OverheadCostField inputId="conversion-overhead-cost"><Input id="conversion-overhead-cost" type="number" min="0" step="0.01" {...form.register('overhead_cost')} /></OverheadCostField>
           <div className="calculated-field"><span>Waste / gain</span><strong className={waste < 0 ? 'text-danger' : ''}>{quantity(waste)} kg</strong><small>Maximum output: {quantity(numberValue(watched.input_kg) * 1.02)} kg</small></div>

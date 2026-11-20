@@ -408,6 +408,9 @@ export interface Conversion extends JsonRecord {
   total_converted_cost?: Numeric
   output_unit_cost?: Numeric
   status: string
+  replaces_id?: Id | null
+  reversed_at?: string | null
+  reversal_reason?: string | null
   conversion_workers: ConversionWorker[]
   workers?: ConversionWorker[]
   date?: string
