@@ -305,6 +305,7 @@ export interface PieceworkRate extends JsonRecord {
   status: 'active' | 'inactive'
   notes?: string | null
   type?: string
+  conversion_type?: { id?: Id; name: string; default_chip_name?: string | null; status?: 'active' | 'inactive' } | null
 }
 
 export interface BulkRmRate extends JsonRecord {

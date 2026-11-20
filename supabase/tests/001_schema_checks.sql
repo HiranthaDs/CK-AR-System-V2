@@ -225,6 +225,40 @@ begin
   ) then
     raise exception 'Conversion type links are incomplete';
   end if;
+  if exists (
+    select 1
+    from pg_catalog.pg_constraint c
+    where c.conrelid = 'public.piecework_rates'::regclass
+      and c.conname = 'piecework_rates_work_type_effective_from_key'
+  ) then
+    raise exception 'Legacy global piecework-rate uniqueness constraint still exists';
+  end if;
+  if not exists (
+    select 1
+    from pg_catalog.pg_indexes i
+    where i.schemaname = 'public'
+      and i.indexname = 'piecework_rates_conversion_work_effective_from_uidx'
+  ) then
+    raise exception 'Missing conversion-scoped piecework-rate uniqueness index';
+  end if;
+  if not exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    where a.attrelid = 'public.piecework_rates'::regclass
+      and a.attname = 'conversion_type_id'
+      and a.attnotnull
+      and not a.attisdropped
+  ) then
+    raise exception 'Piecework rates must always reference a conversion type';
+  end if;
+  if pg_catalog.strpos(
+    pg_catalog.pg_get_functiondef(
+      pg_catalog.to_regprocedure('private.perform_operation_v2(text,jsonb,uuid)')
+    ),
+    'piecework-rate-type:'
+  ) = 0 then
+    raise exception 'Atomic piecework-rate dispatcher is missing';
+  end if;
   if not exists (
     select 1 from pg_catalog.pg_trigger t
     where t.tgrelid = 'public.overtime_entries'::regclass

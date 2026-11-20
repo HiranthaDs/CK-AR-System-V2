@@ -121,6 +121,8 @@ describe('production conversions', () => {
     expect(await screen.findByText('CNV-000010')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Conversion type' })).toBeInTheDocument()
     expect(screen.getByText('ABS Bulk to ABS Chip')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Actions' }))
     expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Reverse' })).toBeEnabled()
 
@@ -153,6 +155,7 @@ describe('production conversions', () => {
     expect(post).not.toHaveBeenCalled()
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
 
+    await user.click(screen.getByRole('button', { name: 'Actions' }))
     await user.click(screen.getByRole('button', { name: 'Edit' }))
     dialog = screen.getByRole('dialog', { name: 'Correct bulk-to-chip conversion' })
     expect(within(dialog).getByRole('combobox', { name: 'Conversion type' })).toHaveValue(absTypeId)

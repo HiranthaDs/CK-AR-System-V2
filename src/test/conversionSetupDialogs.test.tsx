@@ -99,4 +99,61 @@ describe('conversion setup dialogs', () => {
       rate_per_kg: 12.5,
     })))
   })
+
+  it('preselects the saved conversion and work type when editing a rate', async () => {
+    const user = userEvent.setup()
+    const rateId = '22222222-2222-4222-8222-222222222222'
+    const selectedTypeId = '11111111-1111-4111-8111-111111111111'
+    const otherTypeId = '33333333-3333-4333-8333-333333333333'
+    vi.spyOn(api, 'list').mockResolvedValue({
+      items: [{
+        id: otherTypeId,
+        name: 'HIPS Bulk to HIPS Chip',
+        default_chip_name: 'HIPS Chip',
+        status: 'active',
+      }],
+      total: 1,
+      page: 1,
+      page_size: 100,
+      pages: 1,
+    })
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({
+      ok: true,
+      operation: 'piecework_rate.upsert',
+      id: rateId,
+      idempotent: false,
+    })
+
+    renderDialog(<PieceworkRateDialog open record={{
+      id: rateId,
+      work_type: 'Washing',
+      rate_per_kg: 15,
+      effective_from: '2026-11-20',
+      effective_to: null,
+      status: 'active',
+      notes: 'Selected rate',
+      conversion_type: {
+        id: selectedTypeId,
+        name: 'ABS Bulk to ABS Chip',
+        default_chip_name: 'ABS Chip',
+        status: 'active',
+      },
+    }} onClose={vi.fn()} />)
+
+    const conversionType = screen.getByRole('combobox', { name: 'Rate conversion type' })
+    await screen.findByRole('option', { name: 'HIPS Bulk to HIPS Chip' })
+    expect(conversionType).toHaveValue(selectedTypeId)
+    expect(within(conversionType).getByRole('option', { name: 'ABS Bulk to ABS Chip' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Work type' })).toHaveValue('Washing')
+    expect(screen.getByRole('spinbutton', { name: 'Rate per kg' })).toHaveValue(15)
+
+    await user.click(screen.getByRole('button', { name: 'Save rate' }))
+
+    await waitFor(() => expect(patch).toHaveBeenCalledWith(`/piecework-rates/${rateId}`, expect.objectContaining({
+      conversion_type_id: selectedTypeId,
+      work_type: 'Washing',
+      rate_per_kg: 15,
+      effective_from: '2026-11-20',
+    })))
+  })
 })

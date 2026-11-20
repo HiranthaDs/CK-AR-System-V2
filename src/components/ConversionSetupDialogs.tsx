@@ -157,9 +157,9 @@ export function PieceworkRateDialog({
   })
   const form = useForm<RateValues>({
     resolver: zodResolver(rateSchema),
-    values: {
+    defaultValues: {
       id: record?.id,
-      conversion_type_id: record?.conversion_type_id ?? '',
+      conversion_type_id: record?.conversion_type_id ?? record?.conversion_type?.id ?? '',
       work_type: record?.work_type ?? record?.type ?? '',
       rate_per_kg: Number(record?.rate_per_kg ?? 0),
       effective_from: record?.effective_from ?? localIsoDate(),
@@ -171,10 +171,24 @@ export function PieceworkRateDialog({
   useEffect(() => {
     if (!open) return
     const workType = record?.work_type ?? record?.type ?? ''
+    form.reset({
+      id: record?.id,
+      conversion_type_id: record?.conversion_type_id ?? record?.conversion_type?.id ?? '',
+      work_type: workType,
+      rate_per_kg: Number(record?.rate_per_kg ?? 0),
+      effective_from: record?.effective_from ?? localIsoDate(),
+      effective_to: record?.effective_to ?? '',
+      status: record?.status === 'inactive' ? 'inactive' : 'active',
+      notes: record?.notes ?? '',
+    })
     setManualWorkType(Boolean(workType && !WORK_TYPE_OPTIONS.some((option) => option === workType)))
-  }, [open, record?.id, record?.type, record?.work_type])
+  }, [form, open, record])
   const selectedTypeId = form.watch('conversion_type_id') ?? ''
-  const types = typesQuery.data?.items ?? []
+  const queriedTypes = typesQuery.data?.items ?? []
+  const currentType = record?.conversion_type?.id ? record.conversion_type : null
+  const types = currentType && !queriedTypes.some((type) => type.id === currentType.id)
+    ? [currentType as ConversionType, ...queriedTypes]
+    : queriedTypes
   const mutation = useMutation({
     mutationFn: ({ id, body }: { id?: string; body: Record<string, unknown> }) => id
       ? api.patch<MutationReceipt, Record<string, unknown>>(`/piecework-rates/${id}`, body)
