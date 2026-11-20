@@ -1,9 +1,18 @@
-import type { Quotation } from '../types/api'
+import type { CompanyProfile, Quotation } from '../types/api'
 import { money, quantity, shortDate, titleCase } from './format'
+import {
+  downloadInvoiceBlob,
+  drawInvoiceFooters,
+  drawInvoiceHeader,
+  invoiceCompany,
+  invoiceLogoDataUrl,
+  openInvoicePdf,
+} from './invoiceBrand'
 
 export interface QuotationPdfInput {
   quotation: Quotation
-  companyName: string
+  company?: CompanyProfile
+  companyName?: string
 }
 
 function safeFilenamePart(value: string) {
@@ -30,55 +39,45 @@ export function quotationWhatsAppMessage(quotation: Quotation) {
 }
 
 export async function createQuotationPdfBlob(input: QuotationPdfInput): Promise<Blob> {
-  const [{ jsPDF }, { autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')])
-  const { quotation, companyName } = input
+  const company = invoiceCompany(input.company ?? (input.companyName ? { name: input.companyName } : null))
+  const [{ jsPDF }, { autoTable }, logo] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+    invoiceLogoDataUrl(company.logo_url),
+  ])
+  const { quotation } = input
   const document = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true })
   const width = document.internal.pageSize.getWidth()
   const height = document.internal.pageSize.getHeight()
   const margin = 14
   type AutoTableDocument = typeof document & { lastAutoTable?: { finalY: number } }
 
-  document.setProperties({ title: `Quotation ${quotation.quotation_no}`, subject: `Quotation for ${quotation.customer_name}`, author: companyName, creator: 'CK SYS' })
-  document.setFillColor(17, 42, 92)
-  document.rect(0, 0, width, 38, 'F')
-  document.setTextColor(255, 255, 255)
-  document.setFont('helvetica', 'bold')
-  document.setFontSize(20)
-  document.text(companyName, margin, 16)
-  document.setFontSize(9)
-  document.setFont('helvetica', 'normal')
-  document.text('Prepared with CK SYS', margin, 24)
-  document.setFont('helvetica', 'bold')
-  document.setFontSize(22)
-  document.text('QUOTATION', width - margin, 17, { align: 'right' })
-  document.setFontSize(10)
-  document.text(quotation.quotation_no, width - margin, 25, { align: 'right' })
+  document.setProperties({ title: `Quotation ${quotation.quotation_no}`, subject: `Quotation for ${quotation.customer_name}`, author: company.name, creator: 'CK SYS' })
+  drawInvoiceHeader(document, { company, logo, title: 'QUOTATION', number: quotation.quotation_no })
 
   document.setTextColor(23, 32, 51)
-  document.setFontSize(10)
-  document.text('PREPARED FOR', margin, 49)
-  document.setFontSize(13)
-  document.text(quotation.customer_name, margin, 57)
-  document.setFont('helvetica', 'normal')
-  document.setFontSize(8.5)
-  const customerLines = [quotation.customer_phone, quotation.customer_email, quotation.customer_address].filter(Boolean) as string[]
-  document.text(customerLines.length ? customerLines : ['No additional customer details'], margin, 63, { maxWidth: 100 })
   document.setFont('helvetica', 'bold')
-  document.text('Quotation date', width - 72, 49)
-  document.text('Valid until', width - 72, 56)
-  document.text('Status', width - 72, 63)
+  document.setFontSize(8)
+  document.text('PREPARED FOR', margin, 55)
+  document.text('QUOTATION DETAILS', width - 82, 55)
+  document.setFontSize(11)
+  document.text(quotation.customer_name, margin, 62)
   document.setFont('helvetica', 'normal')
-  document.text(shortDate(quotation.quotation_date), width - margin, 49, { align: 'right' })
-  document.text(shortDate(quotation.valid_until), width - margin, 56, { align: 'right' })
-  document.text(titleCase(quotation.status), width - margin, 63, { align: 'right' })
+  document.setFontSize(8)
+  const customerLines = [quotation.customer_phone, quotation.customer_email, quotation.customer_address].filter(Boolean) as string[]
+  document.text(customerLines.length ? customerLines : ['No additional customer details'], margin, 68, { maxWidth: 100 })
+  document.text(`Date: ${shortDate(quotation.quotation_date)}`, width - 82, 62)
+  document.text(`Valid until: ${shortDate(quotation.valid_until)}`, width - 82, 68)
+  document.text(`Payment: ${titleCase(quotation.payment_method || 'accounts_receivable')}`, width - 82, 74)
+  document.text(`Status: ${titleCase(quotation.status)}`, width - 82, 80)
 
   autoTable(document, {
-    startY: 76,
-    margin: { left: margin, right: margin, bottom: 24 },
+    startY: 87,
+    margin: { left: margin, right: margin, bottom: 35 },
     head: [['Product', 'Type', 'Qty', 'Unit price', 'Discount', 'Amount']],
     body: (quotation.quotation_items ?? []).map((line) => [
       `${line.product_name}${line.item?.sku ? `\n${line.item.sku}` : ''}`,
-      line.product_type || line.item?.product_type || '—',
+      line.product_type || line.item?.product_type || 'Manual item',
       quantity(line.quantity, 3),
       money(line.unit_price),
       money(line.discount),
@@ -126,45 +125,25 @@ export async function createQuotationPdfBlob(input: QuotationPdfInput): Promise<
     detailY += Math.max(14, lines.length * 4 + 9)
   }
 
-  if (detailY < height - 38) {
+  if (detailY < height - 42) {
     document.setDrawColor(145, 154, 171)
-    document.line(margin, height - 38, 83, height - 38)
-    document.line(width - 83, height - 38, width - margin, height - 38)
+    document.line(margin, height - 42, 83, height - 42)
+    document.line(width - 83, height - 42, width - margin, height - 42)
     document.setFontSize(7.5)
     document.setTextColor(93, 104, 123)
-    document.text('Customer acceptance / date', margin, height - 33)
-    document.text('Authorized signature', width - 83, height - 33)
+    document.text('Customer acceptance / date', margin, height - 37)
+    document.text('Authorized signature', width - 83, height - 37)
   }
-
-  const pages = document.getNumberOfPages()
-  for (let page = 1; page <= pages; page += 1) {
-    document.setPage(page)
-    document.setDrawColor(220, 226, 235)
-    document.line(margin, height - 17, width - margin, height - 17)
-    document.setFont('helvetica', 'normal')
-    document.setFontSize(6.5)
-    document.setTextColor(102, 112, 133)
-    document.text(`Quotation ${quotation.quotation_no} · Generated by CK SYS`, margin, height - 11)
-    document.text(`Page ${page} of ${pages}`, width - margin, height - 11, { align: 'right' })
-  }
+  drawInvoiceFooters(document, quotation.quotation_no)
   return document.output('blob')
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.rel = 'noopener'
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+export async function downloadQuotationPdf(input: QuotationPdfInput) {
+  downloadInvoiceBlob(await createQuotationPdfBlob(input), quotationPdfFilename(input))
 }
 
-export async function downloadQuotationPdf(input: QuotationPdfInput) {
-  const blob = await createQuotationPdfBlob(input)
-  downloadBlob(blob, quotationPdfFilename(input))
+export async function printQuotationPdf(input: QuotationPdfInput) {
+  return openInvoicePdf(() => createQuotationPdfBlob(input))
 }
 
 export async function shareQuotationPdf(input: QuotationPdfInput) {
@@ -176,6 +155,6 @@ export async function shareQuotationPdf(input: QuotationPdfInput) {
     await navigator.share(shareData)
     return 'shared' as const
   }
-  downloadBlob(blob, filename)
+  downloadInvoiceBlob(blob, filename)
   return 'downloaded' as const
 }

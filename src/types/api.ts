@@ -576,6 +576,7 @@ export interface Sale extends JsonRecord {
   paid_amount?: Numeric | null
   balance_due?: Numeric | null
   payment_status?: string
+  document_status?: 'issued' | 'delivered' | 'completed'
   status: string
   sale_items: SaleLine[]
   sale_payments: Payment[]
@@ -584,7 +585,7 @@ export interface Sale extends JsonRecord {
 export interface QuotationLine extends JsonRecord {
   id: Id
   quotation_id?: Id
-  item_id: Id
+  item_id?: Id | null
   product_name: string
   product_type?: string | null
   quantity: Numeric
@@ -612,6 +613,7 @@ export interface Quotation extends JsonRecord {
   customer_phone?: string | null
   customer_email?: string | null
   customer_address?: string | null
+  payment_method?: string | null
   subtotal: Numeric
   discount_total: Numeric
   total_amount: Numeric

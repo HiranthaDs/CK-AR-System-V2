@@ -267,7 +267,7 @@ export function BulkRmPurchaseDialog({ open, record, mutation, onClose }: {
 
 export function BulkRmInvoiceDialog({ purchaseId, onClose }: { purchaseId: string | null; onClose: () => void }) {
   const toast = useToast()
-  const [busy, setBusy] = useState<'share' | 'download' | null>(null)
+  const [busy, setBusy] = useState<'share' | 'print' | 'download' | null>(null)
   const purchaseQuery = useQuery({
     queryKey: ['rm-purchases', 'invoice', purchaseId],
     queryFn: ({ signal }) => api.get<RawMaterialPurchase>(`/rm-purchases/${purchaseId}`, undefined, signal),
@@ -308,18 +308,24 @@ export function BulkRmInvoiceDialog({ purchaseId, onClose }: { purchaseId: strin
     catch (error) { toast.error('Invoice not downloaded', error instanceof Error ? error.message : 'Try again.') }
     finally { setBusy(null) }
   }
-  const print = () => {
-    if (input && !printRawMaterialPurchaseInvoice(input)) toast.error('Print window blocked', 'Allow pop-ups for this site and try again.')
+  const print = async () => {
+    if (!input) return
+    setBusy('print')
+    try {
+      if (!await printRawMaterialPurchaseInvoice(input)) toast.error('Print window blocked', 'Allow pop-ups for this site and try again.')
+    } catch (error) {
+      toast.error('Invoice not prepared', error instanceof Error ? error.message : 'Try again.')
+    } finally { setBusy(null) }
   }
   const loading = purchaseQuery.isLoading || companyQuery.isLoading
   const error = purchaseQuery.error || companyQuery.error
-  return <Dialog open={Boolean(purchaseId)} onClose={onClose} title={purchase ? `Invoice ${purchase.invoice_no}` : 'Raw-material purchase invoice'} description="Review, print, download, or share the saved supplier invoice." size="large" closeDisabled={Boolean(busy)} footer={<><Button variant="secondary" onClick={onClose} disabled={Boolean(busy)}>Close</Button><Button variant="secondary" icon={MessageCircle} loading={busy === 'share'} disabled={!input || busy === 'download'} onClick={() => void share()}>WhatsApp</Button><Button variant="secondary" icon={Printer} disabled={!input || Boolean(busy)} onClick={print}>Print</Button><Button icon={Download} loading={busy === 'download'} disabled={!input || busy === 'share'} onClick={() => void download()}>Save PDF / Download</Button></>}>
+  return <Dialog open={Boolean(purchaseId)} onClose={onClose} title={purchase ? `Invoice ${purchase.invoice_no}` : 'Raw-material purchase invoice'} description="Review, print, download, or share the saved supplier invoice." size="large" closeDisabled={Boolean(busy)} footer={<><Button variant="secondary" onClick={onClose} disabled={Boolean(busy)}>Close</Button><Button variant="secondary" icon={MessageCircle} loading={busy === 'share'} disabled={!input || Boolean(busy && busy !== 'share')} onClick={() => void share()}>WhatsApp</Button><Button variant="secondary" icon={Printer} loading={busy === 'print'} disabled={!input || Boolean(busy && busy !== 'print')} onClick={() => void print()}>Print</Button><Button icon={Download} loading={busy === 'download'} disabled={!input || Boolean(busy && busy !== 'download')} onClick={() => void download()}>Save PDF / Download</Button></>}>
     {loading ? <LoadingState label="Preparing raw-material invoice…" /> : error ? <ErrorState error={error} onRetry={() => { void purchaseQuery.refetch(); void companyQuery.refetch() }} /> : purchase && company ? <div className="rm-invoice-preview">
       <header className="rm-invoice-preview__head"><div className="rm-invoice-preview__brand">{company.logo_url ? <img src={company.logo_url} alt={`${company.name} logo`} /> : null}<div><h3>{company.name}</h3><p>{company.address || 'Address not configured'}</p><p>{[company.phone, company.email].filter(Boolean).join(' · ') || 'Contact details not configured'}</p></div></div><div><span>RAW MATERIAL PURCHASE INVOICE</span><strong className="mono">{purchase.invoice_no}</strong><p>{shortDate(purchase.purchase_date)}</p></div></header>
       <div className="rm-invoice-preview__meta"><div><span>Supplier</span><strong>{purchase.supplier_name || 'Not provided'}</strong><p>{purchase.supplier_phone || 'No supplier phone'}</p></div><div><span>Bill / Lorry No.</span><strong>{purchase.lorry_no || 'Not provided'}</strong><p className="mono">{purchase.reference_no}</p></div></div>
       <TableWrap><table><thead><tr><th>No.</th><th>Bulk RM type</th><th className="numeric">Qty (kg)</th><th className="numeric">Rate/kg</th><th className="numeric">Total</th></tr></thead><tbody>{purchaseItems.map((line, index) => <tr key={line.id}><td>{index + 1}</td><td><strong>{line.inventory_items?.name || line.material_name || 'Raw material'}</strong>{line.notes ? <span className="table-subtext">{line.notes}</span> : null}</td><td className="numeric">{quantity(line.quantity_kg, 3)}</td><td className="numeric">{money(line.rate_per_kg || numberValue(line.total_cost) / Math.max(numberValue(line.quantity_kg), 1))}</td><td className="numeric"><strong>{money(line.total_cost)}</strong></td></tr>)}</tbody></table></TableWrap>
       <div className="rm-invoice-preview__total"><span>Grand total</span><strong>{money(purchase.grand_total)}</strong></div>
-      <footer className="rm-invoice-preview__footer"><div><span>Payment method</span><strong>{titleCase(purchase.payment_method)}</strong><p>{purchase.notes || 'No consignment notes'}</p></div><div className="rm-invoice-preview__signature">Signature / Stamp</div></footer>
+      <footer className="rm-invoice-preview__footer"><div><span>Payment method</span><strong>{titleCase(purchase.payment_method)}</strong><p>{purchase.notes || 'No consignment notes'}</p><p><strong>Thank you for your business.</strong></p></div><div className="rm-invoice-preview__signature">Signature / Stamp</div></footer>
       {purchase.status === 'reversed' ? <InlineNotice tone="warning" title="Reversed invoice">This invoice is retained for audit history and should not be used as an active payment document.</InlineNotice> : null}
       {!phone ? <InlineNotice tone="warning" title="No WhatsApp number configured">Add the supplier phone on the purchase or the owner phone in the company profile. The share sheet can still send the PDF on supported devices.</InlineNotice> : null}
     </div> : <EmptyState message="The invoice record is unavailable." />}

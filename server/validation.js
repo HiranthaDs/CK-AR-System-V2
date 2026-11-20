@@ -165,14 +165,13 @@ const publicOrder = z.object({
 
 const production = z.object({
   id: optional(uuid), reference_no: optional(reference), production_date: date,
-  shift: optional(text(60, 0)), machine: optional(text(100, 0)), operator_employee_id: uuid,
-  chip_item_id: optional(uuid), chip_name: optional(text()), finished_item_id: optional(uuid),
+  shift: optional(z.enum(['Day', 'Night'])), machine: optional(text(100, 0)), operator_employee_id: uuid,
+  chip_item_id: optional(uuid), chip_name: optional(text()), finished_item_id: uuid,
   finished_item_name: optional(text()), product_type: optional(text(100, 0)), input_kg: positiveQuantity,
   output_quantity: positiveQuantity, working_hours: optional(money), overhead_cost: money.default(0),
   selling_price: optional(positiveMoney), notes: optional(text(2000, 0)),
 }).strict().superRefine((value, ctx) => {
   if (!value.chip_item_id && !value.chip_name) ctx.addIssue({ code: 'custom', message: 'chip_item_id or chip_name is required' })
-  if (!value.finished_item_id && !value.finished_item_name) ctx.addIssue({ code: 'custom', message: 'finished_item_id or finished_item_name is required' })
 })
 
 const saleItem = z.object({
@@ -184,24 +183,32 @@ const saleItem = z.object({
 })
 
 const sale = z.object({
-  id: optional(uuid), reference_no: optional(reference), invoice_no: reference, sale_date: date,
+  id: optional(uuid), reference_no: optional(reference), invoice_no: optional(reference), sale_date: date,
   customer_name: text(), customer_phone: optional(text(40, 0)), payment_method: paymentMethod,
+  document_status: z.enum(['issued', 'delivered', 'completed']).default('issued'),
   amount_paid: money.default(0), items: z.array(saleItem).min(1).max(500),
 }).strict()
 
 const quotationItem = z.object({
-  item_id: uuid, quantity: positiveQuantity, unit_price: positiveMoney, discount: money.default(0),
+  item_id: optional(uuid), product_name: optional(text(160, 0)), product_type: optional(text(100, 0)),
+  manual: z.boolean().optional(),
+  quantity: positiveQuantity, unit_price: positiveMoney, discount: money.default(0),
   notes: optional(text(500, 0)),
-}).strict().refine((value) => value.discount < value.quantity * value.unit_price, 'discount must be less than the line gross amount')
+}).strict().superRefine((value, ctx) => {
+  if (!value.item_id && !value.product_name) ctx.addIssue({ code: 'custom', message: 'item_id or product_name is required' })
+  if (value.discount >= value.quantity * value.unit_price) ctx.addIssue({ code: 'custom', message: 'discount must be less than the line gross amount' })
+})
 
 const quotation = z.object({
   id: optional(uuid), quotation_no: optional(reference), quotation_date: date, valid_until: date,
   customer_name: text(), customer_phone: optional(text(40, 0)), customer_email: optional(text(254, 0)),
-  customer_address: optional(text(500, 0)), status: z.enum(['draft', 'sent', 'accepted', 'rejected', 'expired', 'cancelled']).default('draft'),
+  customer_address: optional(text(500, 0)), payment_method: paymentMethod.default('accounts_receivable'),
+  status: z.enum(['draft', 'sent', 'accepted', 'rejected', 'expired', 'cancelled']).default('draft'),
   terms: optional(text(4000, 0)), notes: optional(text(4000, 0)), items: z.array(quotationItem).min(1).max(100),
 }).strict().superRefine((value, ctx) => {
   if (value.valid_until < value.quotation_date) ctx.addIssue({ code: 'custom', message: 'valid_until cannot be before quotation_date' })
-  if (new Set(value.items.map((item) => item.item_id)).size !== value.items.length) ctx.addIssue({ code: 'custom', message: 'quotation product IDs must be unique' })
+  const productIds = value.items.flatMap((item) => item.item_id ? [item.item_id] : [])
+  if (new Set(productIds).size !== productIds.length) ctx.addIssue({ code: 'custom', message: 'quotation product IDs must be unique' })
 })
 
 const salePayment = z.object({

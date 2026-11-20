@@ -259,7 +259,7 @@ add('GET', '/integrations/catalog/products', { public: true }, async (ctx) => {
 })
 
 add('GET', '/me', {}, async (ctx) => ({ body: ctx.principal.profile }))
-add('GET', '/company-profile', { permissions: ['dashboard.read', 'inventory.read', 'production.read'], anyPermission: true }, async (ctx) => ({
+add('GET', '/company-profile', { permissions: ['dashboard.read', 'inventory.read', 'production.read', 'sales.read'], anyPermission: true }, async (ctx) => ({
   body: await ctx.gateway.selectOne('companies', ctx.principal.companyId, {
     token: ctx.principal.token, requestId: ctx.requestId,
     select: 'id,code,name,address,phone,email,logo_url,is_active,updated_at',
@@ -349,10 +349,10 @@ const listSpecs = [
   ['GET', '/open-earnings', ['payroll.read'], { source: 'employee_open_earnings', allowed: ['work_date', 'employee_name', 'amount'], defaultOrder: 'work_date', dateColumn: 'work_date', searchColumn: 'employee_name', includeStatus: false, extra: (ctx) => [...employeeExtra(ctx), ...(ctx.query.get('source_type') ? [f('source_type', 'eq', safePattern(ctx.query.get('source_type'), /^[a-z_]+$/, 'source_type'))] : [])] }],
   ['GET', '/inventory/bulk', ['inventory.read'], inventoryStageSpec('bulk')],
   ['GET', '/inventory/chips', ['inventory.read'], inventoryStageSpec('chip')],
-  ['GET', '/inventory/finished', ['inventory.read'], inventoryStageSpec('finished')],
+  ['GET', '/inventory/finished', ['inventory.read', 'sales.read'], { ...inventoryStageSpec('finished'), any: true }],
   ['GET', '/inventory/position', ['inventory.read'], { source: 'company_inventory_position', allowed: ['item_name', 'stage', 'quantity_on_hand', 'inventory_value'], defaultOrder: 'item_name', dateColumn: null, searchColumn: 'item_name', includeStatus: false, extra: stageExtra }],
   ['GET', '/inventory/items', ['inventory.read'], { source: 'inventory_items', allowed: ['name', 'sku', 'stage', 'created_at'], defaultOrder: 'name', dateColumn: null, searchColumn: 'name', includeStatus: false, extra: stageExtra }],
-  ['GET', '/products', ['production.read', 'inventory.read', 'sales.read'], { any: true, source: 'inventory_items', allowed: ['name', 'product_type', 'selling_price', 'created_at'], defaultOrder: 'name', dateColumn: null, searchColumn: 'name', includeStatus: false, extra: () => [f('stage', 'eq', 'finished')] }],
+  ['GET', '/products', ['production.read', 'inventory.read', 'sales.read'], { any: true, source: 'inventory_items', allowed: ['name', 'product_type', 'selling_price', 'created_at'], defaultOrder: 'name', dateColumn: null, searchColumn: 'name', includeStatus: false, extra: (ctx) => [f('stage', 'eq', 'finished'), ...(booleanQuery(ctx.query, 'active_only', false) ? [f('is_active', 'eq', true)] : [])] }],
   ['GET', '/rm-purchases', ['inventory.read'], { source: 'raw_material_purchase_consignments', select: RM_PURCHASE_SELECT, allowed: ['purchase_date', 'invoice_no', 'reference_no', 'created_at'], defaultOrder: 'purchase_date', dateColumn: 'purchase_date', searchColumn: 'invoice_no' }],
   ['GET', '/conversions', ['inventory.read'], { source: 'conversions', select: CONVERSION_SELECT, fallbackSelect: CONVERSION_LEGACY_SELECT, allowed: ['conversion_date', 'reference_no', 'created_at'], defaultOrder: 'conversion_date', dateColumn: 'conversion_date', searchColumn: 'reference_no' }],
   ['GET', '/production', ['production.read'], { source: 'production_runs', select: PRODUCTION_SELECT, fallbackSelect: PRODUCTION_LEGACY_SELECT, allowed: ['production_date', 'reference_no', 'created_at'], defaultOrder: 'production_date', dateColumn: 'production_date', searchColumn: 'reference_no' }],
@@ -543,7 +543,16 @@ function stageExtra(ctx) {
 }
 
 function inventoryStageSpec(stage) {
-  return { source: 'company_inventory_position', allowed: ['item_name', 'quantity_on_hand', 'inventory_value', 'last_movement_at'], defaultOrder: 'item_name', dateColumn: null, searchColumn: 'item_name', includeStatus: false, extra: () => [f('stage', 'eq', stage)] }
+  return {
+    source: 'company_inventory_position',
+    allowed: ['item_name', 'quantity_on_hand', 'inventory_value', 'last_movement_at'],
+    defaultOrder: 'item_name', dateColumn: null, searchColumn: 'item_name', includeStatus: false,
+    extra: (ctx) => [
+      f('stage', 'eq', stage),
+      ...(booleanQuery(ctx.query, 'produced_only', false) ? [f('last_movement_at', 'not.is', 'null')] : []),
+      ...(booleanQuery(ctx.query, 'available_only', false) ? [f('quantity_on_hand', 'gt', 0)] : []),
+    ],
+  }
 }
 
 function ledgerExtra(ctx) {

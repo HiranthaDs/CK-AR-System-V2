@@ -106,6 +106,7 @@ begin
         'conversions', 'conversion_workers', 'daily_work',
         'daily_work_piecework', 'daily_work_conversion_links', 'overtime_entries',
         'payroll_overtime_claims', 'production_runs',
+        'quotations', 'quotation_items',
         'sales', 'sale_items', 'sale_payments', 'payrolls', 'payroll_details',
         'payroll_payments', 'stock_adjustments', 'inventory_balances',
         'stock_movements', 'audit_log', 'idempotency_keys'
@@ -245,6 +246,30 @@ begin
       and not a.attisdropped
   ) then
     raise exception 'Inventory catalogue selling price is missing';
+  end if;
+  if not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name = 'sales'
+      and c.column_name = 'document_status' and c.is_nullable = 'NO'
+  ) then
+    raise exception 'Sales invoice document status is missing';
+  end if;
+  if not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name = 'quotations'
+      and c.column_name = 'payment_method' and c.is_nullable = 'NO'
+  ) then
+    raise exception 'Quotation payment method is missing';
+  end if;
+  if not exists (
+    select 1
+    from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name = 'quotation_items'
+      and c.column_name = 'item_id' and c.is_nullable = 'YES'
+  ) then
+    raise exception 'Quotation items do not support manual products';
   end if;
   if not exists (
     select 1 from pg_catalog.pg_trigger t

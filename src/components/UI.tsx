@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import {
   forwardRef,
+  useEffect,
+  useRef,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type InputHTMLAttributes,
@@ -232,7 +234,18 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: (() =
 }
 
 export function TableWrap({ children }: { children: ReactNode }) {
-  return <div className="table-wrap">{children}</div>
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    for (const table of wrapperRef.current?.querySelectorAll('table') ?? []) {
+      const labels = Array.from(table.querySelectorAll('thead th')).map((cell) => cell.textContent?.trim() || 'Value')
+      for (const row of table.querySelectorAll('tbody tr')) {
+        Array.from(row.children).forEach((cell, index) => {
+          if (cell instanceof HTMLTableCellElement && !cell.dataset.label) cell.dataset.label = labels[index] || 'Value'
+        })
+      }
+    }
+  }, [children])
+  return <div className="table-wrap" ref={wrapperRef}>{children}</div>
 }
 
 export function Pagination({ page, pages, total, onChange }: { page: number; pages: number; total: number; onChange: (page: number) => void }) {

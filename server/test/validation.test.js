@@ -29,6 +29,22 @@ describe('Node request validation', () => {
     expectValidation(() => parse(schemas.conversion, { ...value, output_kg: 103 }), /more than 2%/)
   })
 
+  it('requires a Product Master item and a supported production shift', () => {
+    const production = {
+      production_date: '2026-11-19', shift: 'Day', operator_employee_id: ids.employee,
+      chip_item_id: ids.item, finished_item_id: ids.product, finished_item_name: 'Frame stand',
+      product_type: 'Frame Stand', selling_price: 1250, input_kg: 10, output_quantity: 100,
+      working_hours: 8, overhead_cost: 500,
+    }
+    expect(parse(schemas.production, production).finished_item_id).toBe(ids.product)
+    expectValidation(() => parse(schemas.production, {
+      ...production, finished_item_id: undefined,
+    }), /Required|Invalid input/)
+    expectValidation(() => parse(schemas.production, {
+      ...production, shift: 'Morning',
+    }), /Day|Night|Invalid option/)
+  })
+
   it('accepts a multi-material lorry purchase and rejects duplicate material rates', () => {
     const anotherRate = '00000000-0000-4000-8000-000000000004'
     const purchase = {
@@ -75,6 +91,26 @@ describe('Node request validation', () => {
       name: 'Frame stand', product_type: 'Frame Stand', selling_price: 1250,
       image_url: 'https://example.com/frame.webp', description: 'x'.repeat(501),
     }), /500/)
+  })
+
+  it('accepts automatic invoice numbers and manual quotation products', () => {
+    const sale = parse(schemas.sale, {
+      sale_date: '2026-11-20', customer_name: 'Retail Customer', customer_phone: '0771234567',
+      payment_method: 'cash', document_status: 'delivered', amount_paid: 1000,
+      items: [{ item_id: ids.product, quantity: 2, unit_price: 500, discount: 0 }],
+    })
+    expect(sale.invoice_no).toBeUndefined()
+    expect(sale.document_status).toBe('delivered')
+
+    const quotation = parse(schemas.quotation, {
+      quotation_date: '2026-11-20', valid_until: '2026-11-27', customer_name: 'Pre-order Customer',
+      payment_method: 'bank_transfer', status: 'sent',
+      items: [{ manual: true, product_name: 'Custom moulded part', product_type: 'Custom', quantity: 3, unit_price: 750, discount: 50 }],
+    })
+    expect(quotation.items[0].item_id).toBeUndefined()
+    expectValidation(() => parse(schemas.quotation, {
+      ...quotation, items: [{ manual: true, product_name: '', product_type: '', quantity: 1, unit_price: 100, discount: 0 }],
+    }), /item_id or product_name/)
   })
 
   it('requires balanced journals and settlement-safe payroll methods', () => {
