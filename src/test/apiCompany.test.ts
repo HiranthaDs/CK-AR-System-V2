@@ -12,7 +12,7 @@ vi.mock('../lib/supabase', () => ({
   supabase: { auth: authMocks },
 }))
 
-import { api, getActiveCompanyId, setActiveCompanyId } from '../lib/api'
+import { api, ApiError, getActiveCompanyId, setActiveCompanyId } from '../lib/api'
 
 afterEach(() => {
   setActiveCompanyId(null)
@@ -46,5 +46,24 @@ describe('company-aware API requests', () => {
 
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers)
     expect(headers.has('X-Company-ID')).toBe(false)
+  })
+
+  it('shows validation details and a request reference from failed saves', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      status: 422,
+      detail: 'The request did not pass validation.',
+      code: 'request_validation_failed',
+      request_id: 'request-accounting-42',
+      errors: [
+        { loc: ['body', 'lines', 1, 'credit'], msg: 'Enter either a debit or a credit.' },
+      ],
+    }), { status: 422, headers: { 'Content-Type': 'application/problem+json' } }))
+
+    const error = await api.post('/journals', {}).catch((value: unknown) => value)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).message).toBe(
+      'The request did not pass validation. • lines › line 2 › credit: Enter either a debit or a credit. • Request reference: request-accounting-42',
+    )
   })
 })

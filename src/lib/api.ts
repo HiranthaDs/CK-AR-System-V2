@@ -19,6 +19,11 @@ export interface ApiProblem {
   message?: string | undefined
   code?: string | undefined
   request_id?: string | undefined
+  errors?: Array<{
+    loc?: Array<string | number> | undefined
+    msg?: string | undefined
+    message?: string | undefined
+  }> | undefined
   [key: string]: unknown
 }
 
@@ -75,14 +80,32 @@ function buildUrl(path: string, query?: ApiQuery) {
 }
 
 function problemMessage(problem: ApiProblem | undefined, fallback: string) {
-  if (typeof problem?.detail === 'string') return problem.detail
+  let primary = ''
+  if (typeof problem?.detail === 'string') primary = problem.detail
   if (Array.isArray(problem?.detail)) {
     const messages = problem.detail
       .map((entry) => entry.msg ?? entry.message)
       .filter((value): value is string => Boolean(value))
-    if (messages.length) return messages.join('. ')
+    if (messages.length) primary = messages.join('. ')
   }
-  return problem?.message || fallback
+  if (!primary) primary = problem?.message || fallback
+
+  const details = (problem?.errors ?? [])
+    .map((entry) => {
+      const message = entry.msg ?? entry.message
+      if (!message || message === primary) return null
+      const location = (entry.loc ?? [])
+        .filter((part) => part !== 'body' && part !== 'database')
+        .map((part) => typeof part === 'number' ? `line ${part + 1}` : String(part).replaceAll('_', ' '))
+        .join(' › ')
+      return location ? `${location}: ${message}` : message
+    })
+    .filter((value): value is string => Boolean(value))
+  const uniqueDetails = [...new Set(details)]
+  const reference = String(problem?.request_id || '').trim()
+  return [primary, ...uniqueDetails, reference ? `Request reference: ${reference}` : '']
+    .filter(Boolean)
+    .join(' • ')
 }
 
 async function currentAccessToken() {

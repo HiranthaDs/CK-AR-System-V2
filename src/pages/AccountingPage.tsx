@@ -255,6 +255,7 @@ export function AccountingPage() {
     },
     onError: (error) => toast.error('Unable to reverse journal', error instanceof Error ? error.message : 'Try again.'),
   })
+  const accountingMutationError = createJournal.error ?? reverseJournal.error
 
   const balances = useMemo(() => balancesQuery.data ?? [], [balancesQuery.data])
   const totals = useMemo(() => ({
@@ -270,6 +271,11 @@ export function AccountingPage() {
   return (
     <div className="page-stack">
       <PageHeader eyebrow={`${year} fiscal ledger`} title="Accounting control centre" description="Post balanced journals, inspect the master ledger, and produce server-calculated statements." />
+      {accountingMutationError ? (
+        <InlineNotice tone="danger" title="Accounting change was not saved">
+          {accountingMutationError instanceof Error ? accountingMutationError.message : 'Review the accounting entry and try again.'}
+        </InlineNotice>
+      ) : null}
       <Tabs value={tab} onChange={changeTab} ariaLabel="Accounting sections" items={[
         { value: 'overview', label: 'Overview', icon: Scale },
         { value: 'quick', label: 'Quick entry', icon: ReceiptText },

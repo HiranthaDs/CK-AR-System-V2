@@ -368,10 +368,17 @@ export class SupabaseGateway {
     const body = await response.clone().json().catch(() => ({}))
     const pgCode = String(body?.code || '').slice(0, 32)
     const message = String(body?.message || body?.details || '').trim()
+    const upstreamDetails = [body?.details, body?.hint]
+      .map((value) => String(value || '').trim())
+      .filter((value, index, values) => value && value !== message && values.indexOf(value) === index)
+      .slice(0, 2)
+      .map((value) => ({ type: 'database_detail', loc: ['database'], msg: value.slice(0, 500) }))
     let status = response.status
     let code = 'supabase_error'
     let detail = 'The database request was rejected'
-    if (['PGRST200', 'PGRST202', 'PGRST204', 'PGRST205', '42703', '42P01'].includes(pgCode)) {
+    if (/^Unsupported ERP operation:/i.test(message)) {
+      status = 503; code = 'supabase_schema_unavailable'; detail = `${message}. The database operation dispatcher is out of date; apply all pending migrations.`
+    } else if (['PGRST200', 'PGRST202', 'PGRST204', 'PGRST205', '42703', '42P01'].includes(pgCode)) {
       status = 503; code = 'supabase_schema_unavailable'; detail = 'The Supabase ERP schema update is not deployed. Apply all database migrations and reload the Data API schema.'
     } else if (status === 401) { code = 'supabase_auth_failed'; detail = 'The Supabase session was rejected' }
     else if (status === 403 || pgCode === '42501') { status = 403; code = 'insufficient_database_permission'; detail = 'You do not have permission to perform this database operation' }
@@ -381,7 +388,11 @@ export class SupabaseGateway {
     else if (status === 429) { code = 'supabase_rate_limited'; detail = 'Supabase is temporarily rate limited' }
     else if (status >= 500) { status = 502; code = 'supabase_bad_gateway'; detail = 'The database is temporarily unavailable' }
     const retryAfter = response.headers.get('retry-after')
-    return new ApiError(status, detail, { code, headers: retryAfter ? { 'Retry-After': retryAfter.slice(0, 100) } : {} })
+    return new ApiError(status, detail, {
+      code,
+      errors: upstreamDetails,
+      headers: retryAfter ? { 'Retry-After': retryAfter.slice(0, 100) } : {},
+    })
   }
 
   async mapAuthAdminError(response) {
