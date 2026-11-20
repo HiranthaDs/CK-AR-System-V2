@@ -159,13 +159,13 @@ describe('conversion setup', () => {
 
     expect(await screen.findByText('Existing cut')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Add type' }))
-    await user.type(screen.getByRole('textbox', { name: 'Conversion type' }), 'Fine chip conversion')
-    await user.type(screen.getByRole('textbox', { name: /Default chip stock name/ }), 'Fine chip stock')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Conversion type' }), 'ABS Bulk to ABS Chip')
+    expect(screen.getByRole('textbox', { name: /Default chip stock name/ })).toHaveValue('ABS Chip')
     await user.click(screen.getByRole('button', { name: 'Save type' }))
 
     await waitFor(() => expect(post).toHaveBeenCalledWith('/conversion-types', {
-      name: 'Fine chip conversion',
-      default_chip_name: 'Fine chip stock',
+      name: 'ABS Bulk to ABS Chip',
+      default_chip_name: 'ABS Chip',
       status: 'active',
       notes: null,
     }))

@@ -29,6 +29,20 @@ describe('Node request validation', () => {
     expectValidation(() => parse(schemas.conversion, { ...value, output_kg: 103 }), /more than 2%/)
   })
 
+  it('requires both a saved conversion type and a salary-sheet work type for rates', () => {
+    const rate = {
+      conversion_type_id: ids.product, work_type: 'Grinding', rate_per_kg: 12.5,
+      effective_from: '2026-11-20', status: 'active',
+    }
+    expect(parse(schemas.pieceworkRate, rate).work_type).toBe('Grinding')
+    expectValidation(() => parse(schemas.pieceworkRate, {
+      ...rate, conversion_type_id: undefined,
+    }), /Required|Invalid input/)
+    expectValidation(() => parse(schemas.pieceworkRate, {
+      ...rate, work_type: undefined,
+    }), /Required|Invalid input/)
+  })
+
   it('requires a Product Master item and a supported production shift', () => {
     const production = {
       production_date: '2026-11-19', shift: 'Day', operator_employee_id: ids.employee,

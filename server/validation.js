@@ -76,11 +76,10 @@ const conversionType = z.object({
 }).strict()
 
 const pieceworkRate = z.object({
-  id: optional(uuid), conversion_type_id: optional(uuid), work_type: optional(text()),
+  id: optional(uuid), conversion_type_id: uuid, work_type: text(),
   rate_per_kg: positiveMoney, effective_from: date, effective_to: optional(date),
   status: status.default('active'), notes: optional(text(1000, 0)),
 }).strict().superRefine((value, ctx) => {
-  if (!value.conversion_type_id && !value.work_type) ctx.addIssue({ code: 'custom', message: 'conversion_type_id or work_type is required' })
   if (value.effective_to && value.effective_to < value.effective_from) ctx.addIssue({ code: 'custom', message: 'effective_to cannot be earlier than effective_from' })
 })
 

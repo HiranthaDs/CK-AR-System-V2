@@ -1,9 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Tags, Wrench } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod/v3'
 import { api } from '../lib/api'
+import { chipStockNameForConversion, CONVERSION_TYPE_OPTIONS, WORK_TYPE_OPTIONS } from '../lib/conversionSetup'
 import { localIsoDate } from '../lib/format'
 import type { ConversionType, MutationReceipt, PieceworkRate } from '../types/api'
 import { Dialog } from './Dialog'
@@ -20,7 +22,7 @@ const conversionTypeSchema = z.object({
 
 const rateSchema = z.object({
   id: z.string().optional(),
-  conversion_type_id: z.string().optional(),
+  conversion_type_id: z.string().min(1, 'Conversion type is required.'),
   work_type: z.string().trim().min(2, 'Work type is required.').max(160),
   rate_per_kg: z.coerce.number().positive('Rate must be greater than zero.'),
   effective_from: z.string().min(1, 'Effective date is required.'),
@@ -54,16 +56,21 @@ export function ConversionTypeDialog({
 }) {
   const queryClient = useQueryClient()
   const toast = useToast()
+  const [manualType, setManualType] = useState(false)
   const form = useForm<ConversionTypeValues>({
     resolver: zodResolver(conversionTypeSchema),
     values: {
       id: record?.id,
       name: record?.name ?? '',
-      default_chip_name: record?.default_chip_name ?? '',
+      default_chip_name: record?.default_chip_name ?? chipStockNameForConversion(record?.name ?? ''),
       status: record?.status === 'inactive' ? 'inactive' : 'active',
       notes: record?.notes ?? '',
     },
   })
+  useEffect(() => {
+    if (!open) return
+    setManualType(Boolean(record?.name && !CONVERSION_TYPE_OPTIONS.some((option) => option === record.name)))
+  }, [open, record?.id, record?.name])
   const mutation = useMutation({
     mutationFn: ({ id, body }: { id?: string; body: Record<string, unknown> }) => id
       ? api.patch<MutationReceipt, Record<string, unknown>>(`/conversion-types/${id}`, body)
@@ -93,11 +100,31 @@ export function ConversionTypeDialog({
       footer={<><Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>Cancel</Button><Button icon={Tags} loading={mutation.isPending} onClick={() => void submit()}>Save type</Button></>}
     >
       <form className="form-grid form-grid--two" onSubmit={(event) => void submit(event)}>
-        <Field label="Conversion type" required error={form.formState.errors.name?.message}>
-          <Input {...form.register('name')} placeholder="Example: Bulk rubber to 10 mm chip" />
+        <Field label="Conversion type" required error={form.formState.errors.name?.message} hint="Choose a standard conversion or use Manual for another type.">
+          <Select aria-label="Conversion type" value={manualType ? '__manual__' : form.watch('name')} onChange={(event) => {
+            const value = event.target.value
+            if (value === '__manual__') {
+              setManualType(true)
+              form.setValue('name', '', { shouldValidate: true })
+              form.setValue('default_chip_name', '', { shouldValidate: true })
+              return
+            }
+            setManualType(false)
+            form.setValue('name', value, { shouldValidate: true })
+            form.setValue('default_chip_name', chipStockNameForConversion(value), { shouldValidate: true })
+          }}>
+            <option value="">Select conversion type</option>
+            {CONVERSION_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{type}</option>)}
+            <option value="__manual__">Manual — enter another type</option>
+          </Select>
+          {manualType ? <Input aria-label="Manual conversion type" value={form.watch('name')} onChange={(event) => {
+            const value = event.target.value
+            form.setValue('name', value, { shouldValidate: true })
+            form.setValue('default_chip_name', chipStockNameForConversion(value), { shouldValidate: true })
+          }} placeholder="Example: Nylon Bulk to Nylon Chip" autoFocus /> : null}
         </Field>
-        <Field label="Default chip stock name" error={form.formState.errors.default_chip_name?.message} hint="Prefills the output name; it can still be changed while posting.">
-          <Input {...form.register('default_chip_name')} placeholder="Example: 10 mm rubber chip" />
+        <Field label="Default chip stock name" error={form.formState.errors.default_chip_name?.message} hint="Automatically derived from the selected or entered conversion type.">
+          <Input {...form.register('default_chip_name')} placeholder="Select or enter a conversion type" readOnly />
         </Field>
         <Field label="Status">
           <Select {...form.register('status')}><option value="active">Active</option><option value="inactive">Inactive</option></Select>
@@ -121,6 +148,7 @@ export function PieceworkRateDialog({
 }) {
   const queryClient = useQueryClient()
   const toast = useToast()
+  const [manualWorkType, setManualWorkType] = useState(false)
   const typesQuery = useQuery({
     queryKey: ['conversion-types', 'rate-dialog'],
     queryFn: ({ signal }) => api.list<ConversionType>('/conversion-types', { page: 1, page_size: 100, status: 'active', descending: false }, signal),
@@ -140,6 +168,11 @@ export function PieceworkRateDialog({
       notes: record?.notes ?? '',
     },
   })
+  useEffect(() => {
+    if (!open) return
+    const workType = record?.work_type ?? record?.type ?? ''
+    setManualWorkType(Boolean(workType && !WORK_TYPE_OPTIONS.some((option) => option === workType)))
+  }, [open, record?.id, record?.type, record?.work_type])
   const selectedTypeId = form.watch('conversion_type_id') ?? ''
   const types = typesQuery.data?.items ?? []
   const mutation = useMutation({
@@ -162,40 +195,50 @@ export function PieceworkRateDialog({
       notes: values.notes || null,
     },
   }))
-  const workTypeField = form.register('work_type')
-
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title={record ? 'Edit conversion rate' : 'Add conversion rate'}
-      description="Link a rate to a saved conversion type, or choose Manual and enter a standalone work type."
+      description="Link a work rate to a saved conversion type."
       closeDisabled={mutation.isPending}
       footer={<><Button variant="secondary" onClick={onClose} disabled={mutation.isPending}>Cancel</Button><Button icon={Wrench} loading={mutation.isPending} onClick={() => void submit()}>Save rate</Button></>}
     >
       <form className="form-grid form-grid--two" onSubmit={(event) => void submit(event)}>
-        <Field label="Conversion type" hint={typesQuery.isError ? 'Saved types could not be loaded. Manual entry is still available.' : undefined}>
+        <Field label="Conversion type" required error={form.formState.errors.conversion_type_id?.message} hint={typesQuery.isError ? 'Saved conversion types could not be loaded. Try again.' : undefined}>
           <Select
             aria-label="Rate conversion type"
-            value={selectedTypeId || '__manual__'}
+            value={selectedTypeId}
             onChange={(event) => {
               const value = event.target.value
-              if (value === '__manual__') {
-                form.setValue('conversion_type_id', '')
-                return
+              form.setValue('conversion_type_id', value, { shouldValidate: true })
+              if (value) {
+                setManualWorkType(false)
+                form.setValue('work_type', 'Grinding', { shouldValidate: true })
               }
-              const selected = types.find((item) => item.id === value)
-              form.setValue('conversion_type_id', value)
-              if (selected) form.setValue('work_type', selected.name, { shouldValidate: true })
             }}
           >
-            <option value="__manual__">Manual — type a work type</option>
+            <option value="">Select saved conversion type</option>
             {typesQuery.isLoading ? <option value="" disabled>Loading saved types…</option> : null}
             {types.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </Select>
         </Field>
-        <Field label="Work type" required error={form.formState.errors.work_type?.message} hint={selectedTypeId ? 'Filled from the saved type. Editing it switches this rate to Manual.' : 'Stored on every worker earning as a readable snapshot.'}>
-          <Input {...workTypeField} onChange={(event) => { void workTypeField.onChange(event); if (selectedTypeId) form.setValue('conversion_type_id', '') }} placeholder="Enter the work performed" />
+        <Field label="Work type" required error={form.formState.errors.work_type?.message} hint="Defaults to Grinding; choose another option or use Manual.">
+          <Select aria-label="Work type" value={manualWorkType ? '__manual__' : form.watch('work_type')} onChange={(event) => {
+            const value = event.target.value
+            if (value === '__manual__') {
+              setManualWorkType(true)
+              form.setValue('work_type', '', { shouldValidate: true })
+              return
+            }
+            setManualWorkType(false)
+            form.setValue('work_type', value, { shouldValidate: true })
+          }}>
+            <option value="">Select work type</option>
+            {WORK_TYPE_OPTIONS.map((type) => <option key={type} value={type}>{type}</option>)}
+            <option value="__manual__">Manual — enter another work type</option>
+          </Select>
+          {manualWorkType ? <Input aria-label="Manual work type" value={form.watch('work_type')} onChange={(event) => form.setValue('work_type', event.target.value, { shouldValidate: true })} placeholder="Enter work type" autoFocus /> : null}
         </Field>
         <Field label="Rate per kg" required error={form.formState.errors.rate_per_kg?.message}>
           <Input type="number" min="0.01" step="0.01" {...form.register('rate_per_kg')} />
