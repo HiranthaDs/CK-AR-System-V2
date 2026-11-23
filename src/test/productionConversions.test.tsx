@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToastProvider } from '../components/Toast'
 import { api } from '../lib/api'
-import { chipStockBaseNameForConversion, CONVERSION_TYPE_OPTIONS, conversionTypeForBulkMaterial } from '../lib/conversionSetup'
+import { autoChipStockNameForConversion, CONVERSION_TYPE_OPTIONS, conversionTypeForBulkMaterial } from '../lib/conversionSetup'
 import { ProductionPage } from '../pages/ProductionPage'
 
 afterEach(() => {
@@ -29,8 +29,8 @@ describe('production conversions', () => {
     const types = CONVERSION_TYPE_OPTIONS.map((name, index) => ({ id: String(index), name }))
 
     expect(bulkMaterials.map((material) => conversionTypeForBulkMaterial(types, material)?.name)).toEqual(CONVERSION_TYPE_OPTIONS)
-    expect(chipStockBaseNameForConversion('ABS Bulk to ABS Chip', 'ABS Chip')).toBe('ABS')
-    expect(chipStockBaseNameForConversion('Black Masterbatch Bulk to Chip', 'Black Masterbatch Chip')).toBe('Black Masterbatch')
+    expect(autoChipStockNameForConversion('ABS Bulk to ABS Chip', 'ABS Chip')).toBe('Auto ABS Chip')
+    expect(autoChipStockNameForConversion('Black Masterbatch Bulk to Chip', 'Black Masterbatch Chip')).toBe('Auto Black Masterbatch Chip')
   })
 
   it('orders and auto-fills new conversions, displays their type, and saves edits as corrections', async () => {
@@ -134,18 +134,19 @@ describe('production conversions', () => {
     expect(within(dialog).getByText('Chip stock name').closest('label')).toHaveClass('field--span-2')
 
     const bulkMaterial = within(dialog).getByRole('combobox', { name: 'Bulk material' })
-    await screen.findByRole('option', { name: /ABS - Acrylonitrile Butadiene Styrene.*90 kg available/ })
-    await user.selectOptions(bulkMaterial, bulkId)
+    await user.click(bulkMaterial)
+    await user.click(await screen.findByRole('option', { name: /ABS - Acrylonitrile Butadiene Styrene.*90 kg available/ }))
     await waitFor(() => expect(within(dialog).getByRole('combobox', { name: 'Conversion type' })).toHaveValue(absTypeId))
     expect(within(dialog).getByRole('spinbutton', { name: 'Input kg' })).toHaveValue(90)
     expect(within(dialog).getByRole('spinbutton', { name: 'Input kg' })).toHaveAttribute('max', '90')
-    expect(within(dialog).getByRole('textbox', { name: 'Chip stock name' })).toHaveValue('ABS')
+    expect(within(dialog).getByRole('textbox', { name: 'Chip stock name' })).toHaveValue('Auto ABS Chip')
     expect(within(dialog).getByRole('textbox', { name: 'Chip stock name' })).toHaveAttribute('readonly')
 
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Conversion type' }), hipsTypeId)
-    expect(within(dialog).getByRole('textbox', { name: 'Chip stock name' })).toHaveValue('HIPS')
+    expect(within(dialog).getByRole('textbox', { name: 'Chip stock name' })).toHaveValue('Auto HIPS Chip')
     await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Conversion type' }), absTypeId)
-    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'Worker 1' }), workerId)
+    await user.click(within(dialog).getByRole('combobox', { name: 'Worker 1' }))
+    await user.click(await screen.findByRole('option', { name: /Production Worker.*EMP-001/ }))
     await user.clear(within(dialog).getByRole('spinbutton', { name: 'Input kg' }))
     await user.type(within(dialog).getByRole('spinbutton', { name: 'Input kg' }), '91')
     await user.type(within(dialog).getByRole('spinbutton', { name: 'Output kg' }), '80')

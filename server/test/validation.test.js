@@ -19,6 +19,28 @@ describe('Node request validation', () => {
     }), /left_date is required/)
   })
 
+  it('validates attendance, shift settings, and dated salary advances', () => {
+    const work = parse(schemas.dailyTarget, {
+      employee_id: ids.employee, work_date: '2026-11-20', is_absent: false,
+      in_time: '08:30', out_time: '18:30', target_hours: 8, target_percent: 100,
+      activity: 'Machine operation',
+    })
+    expect(work.out_time).toBe('18:30')
+    expect(parse(schemas.salaryAdvance, {
+      employee_id: ids.employee, advance_date: '2026-11-20', amount: 5000, notes: 'Emergency request',
+    }).amount).toBe(5000)
+    expect(parse(schemas.shiftSettings, {
+      day_start: '08:30', day_end: '17:30', night_start: '17:30', night_end: '08:30',
+    }).night_start).toBe('17:30')
+    expectValidation(() => parse(schemas.dailyTarget, {
+      employee_id: ids.employee, work_date: '2026-11-20', is_absent: true,
+      in_time: '08:30', target_hours: 0, target_percent: 0,
+    }), /Absent Daily Work/)
+    expectValidation(() => parse(schemas.salaryAdvance, {
+      employee_id: ids.employee, advance_date: '2026-11-20', amount: 0,
+    }), /Too small|greater than zero/)
+  })
+
   it('accepts a saved conversion rate and rejects unsafe output yield', () => {
     const value = parse(schemas.conversion, {
       conversion_date: '2026-09-21', source_item_id: ids.item, chip_name: 'PP chips',

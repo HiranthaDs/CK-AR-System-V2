@@ -37,6 +37,11 @@ GET /daily-work
 POST /daily-work
 PATCH /daily-work/:work_id
 DELETE /daily-work/:work_id
+GET /salary-advances
+POST /salary-advances
+DELETE /salary-advances/:advance_id
+GET /shift-settings
+POST /shift-settings
 GET /overtime
 POST /overtime
 PATCH /overtime/:overtime_id
@@ -120,7 +125,7 @@ POST /admin/purge-business-data
 describe('Node API route parity', () => {
   it('contains every original API method and path exactly once', () => {
     const actual = routeManifest().map((route) => `${route.method} ${route.path}`)
-    expect(actual).toHaveLength(112)
+    expect(actual).toHaveLength(117)
     expect(new Set(actual).size).toBe(actual.length)
     expect(actual.sort()).toEqual(expected)
   })

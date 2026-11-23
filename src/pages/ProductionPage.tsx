@@ -24,7 +24,7 @@ import {
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { z } from 'zod/v3'
 import { api } from '../lib/api'
-import { chipStockBaseNameForConversion, conversionTypeForBulkMaterial } from '../lib/conversionSetup'
+import { autoChipStockNameForConversion, conversionTypeForBulkMaterial } from '../lib/conversionSetup'
 import { localIsoDate, money, numberValue, quantity, recordValue, shortDate, titleCase } from '../lib/format'
 import type { BulkRmRate, Conversion, ConversionType, Employee, InventoryItem, InventoryPosition, MutationReceipt, Page, PieceworkRate, ProductionRun, ProductionSummary, RawMaterialPurchase } from '../types/api'
 import { useToast } from '../components/Toast'
@@ -435,7 +435,7 @@ function ConversionDialog({ open, record, mutation, onClose }: { open: boolean; 
     form.setValue('conversion_type_id', value, { shouldValidate: true })
     if (!type) return
     form.setValue('chip_type', type.name, { shouldValidate: true })
-    form.setValue('chip_name', chipStockBaseNameForConversion(type.name, type.default_chip_name), { shouldValidate: true })
+    form.setValue('chip_name', autoChipStockNameForConversion(type.name, type.default_chip_name), { shouldValidate: true })
     const matchingRates = effectiveRates.filter((rate) => rate.conversion_type_id === value || (!rate.conversion_type_id && rate.work_type === type.name))
     const validIds = new Set(matchingRates.map((rate) => rate.id))
     watched.workers.forEach((worker, index) => {
@@ -507,7 +507,7 @@ function ConversionDialog({ open, record, mutation, onClose }: { open: boolean; 
           <Field label="Conversion date" required><Input type="date" {...form.register('conversion_date')} /></Field>
           <Field label="Input kg" required error={form.formState.errors.input_kg?.message} hint={availableInputKg != null ? `${quantity(availableInputKg)} kg available for this entry; a lower quantity is allowed.` : undefined}><Input aria-label="Input kg" type="number" min="0.000001" max={availableInputKg} step="0.001" {...form.register('input_kg')} /></Field>
           <Field label="Chip stock name" required className="field--span-2" error={form.formState.errors.chip_name?.message}><Input {...form.register('chip_name')} readOnly /></Field>
-          {!selectedTypeId ? <Field label="Manual conversion type" required error={form.formState.errors.chip_type?.message}><Input value={form.watch('chip_type')} onChange={(event) => { const value = event.target.value; form.setValue('chip_type', value, { shouldValidate: true }); form.setValue('chip_name', chipStockBaseNameForConversion(value), { shouldValidate: true }) }} placeholder="Describe this conversion" /></Field> : null}
+          {!selectedTypeId ? <Field label="Manual conversion type" required error={form.formState.errors.chip_type?.message}><Input value={form.watch('chip_type')} onChange={(event) => { const value = event.target.value; form.setValue('chip_type', value, { shouldValidate: true }); form.setValue('chip_name', autoChipStockNameForConversion(value), { shouldValidate: true }) }} placeholder="Describe this conversion" /></Field> : null}
           <Field label="Output kg" required error={form.formState.errors.output_kg?.message}><Input type="number" min="0.000001" step="0.001" {...form.register('output_kg')} /></Field>
           <OverheadCostField inputId="conversion-overhead-cost"><Input id="conversion-overhead-cost" type="number" min="0" step="0.01" {...form.register('overhead_cost')} /></OverheadCostField>
           <div className="calculated-field"><span>Waste / gain</span><strong className={waste < 0 ? 'text-danger' : ''}>{quantity(waste)} kg</strong><small>Maximum output: {quantity(numberValue(watched.input_kg) * 1.02)} kg</small></div>

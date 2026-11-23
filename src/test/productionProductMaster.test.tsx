@@ -50,8 +50,8 @@ describe('production Product Master selection', () => {
     expect(screen.getByRole('combobox', { name: 'Shift' })).toHaveValue('Night')
 
     const productSelect = screen.getByRole('combobox', { name: 'Final product name' })
-    await screen.findByRole('option', { name: /Frame Stand Pro/ })
-    await user.selectOptions(productSelect, '00000000-0000-4000-8000-000000000003')
+    await user.click(productSelect)
+    await user.click(await screen.findByRole('option', { name: /Frame Stand Pro/ }))
 
     const sellingPrice = screen.getByLabelText<HTMLInputElement>(/Selling price/)
     expect(sellingPrice).toHaveValue(2250)

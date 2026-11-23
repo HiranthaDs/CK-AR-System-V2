@@ -100,10 +100,11 @@ describe('Node API handler', () => {
 
     const responses = []
     responses.push(await fetch(`${origin}/api/v1/daily-work/${dailyTargetId}`, mutation('scope-edit-daily', {
-        employee_id: employeeId, work_date: '2026-11-20', target_percent: 90, notes: 'Selected row only',
+        employee_id: employeeId, work_date: '2026-11-20', is_absent: false, in_time: '08:30', out_time: '17:30',
+        target_hours: 6, target_percent: 90, activity: 'Production', notes: 'Selected row only',
       })))
     responses.push(await fetch(`${origin}/api/v1/overtime/${overtimeId}`, mutation('scope-edit-ot', {
-      employee_id: employeeId, work_date: '2026-11-20', hours: 2, target_percent: 80, notes: 'Selected row only',
+      employee_id: employeeId, work_date: '2026-11-20', hours: 2, target_hours: 1.5, notes: 'Selected row only',
     })))
     responses.push(await fetch(`${origin}/api/v1/quotations/${quotationId}`, mutation('scope-edit-quotation', {
       quotation_date: '2026-11-20', valid_until: '2026-11-30', customer_name: 'Selected Customer',

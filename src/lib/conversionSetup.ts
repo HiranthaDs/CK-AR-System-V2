@@ -34,9 +34,10 @@ export function chipStockNameForConversion(conversionType: string) {
   return shortName ? `${shortName} Chip` : ''
 }
 
-export function chipStockBaseNameForConversion(conversionType: string, defaultChipName?: string | null) {
+export function autoChipStockNameForConversion(conversionType: string, defaultChipName?: string | null) {
   const chipName = defaultChipName?.trim() || chipStockNameForConversion(conversionType)
-  return chipName.replace(/\s+chip$/i, '').trim()
+  if (!chipName) return ''
+  return /^auto\s+/i.test(chipName) ? chipName : `Auto ${chipName}`
 }
 
 function materialKey(value: string) {

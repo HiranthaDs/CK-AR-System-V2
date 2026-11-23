@@ -55,7 +55,8 @@ begin
     'current_user_access', 'inventory_position', 'inventory_stage_summary',
     'production_daily_summary', 'account_balances', 'account_balances_by_year',
     'employee_open_earnings', 'sales_outstanding', 'payroll_outstanding',
-    'ledger_view', 'overtime_work_view',
+    'ledger_view', 'daily_target_work_view', 'overtime_work_view',
+    'employee_salary_advance_view',
     'shared_inventory_availability'
   ]
   loop
@@ -98,7 +99,8 @@ begin
         'companies', 'company_memberships', 'company_user_roles',
         'company_inventory_balances', 'fiscal_periods',
         'inventory_ownership_transfers',
-        'employees', 'employee_compensation_history', 'conversion_types',
+        'employees', 'employee_compensation_history', 'company_shift_settings',
+        'employee_salary_advances', 'payroll_salary_advance_claims', 'conversion_types',
         'piecework_rates', 'bulk_rm_rates', 'catalog_api_credentials',
         'inventory_items', 'accounts',
         'journal_entries', 'journal_lines', 'raw_material_purchase_consignments',
@@ -151,6 +153,23 @@ begin
     'authenticated', 'public.current_user_access', 'select'
   ) then
     raise exception 'authenticated must read public.current_user_access';
+  end if;
+  if not exists (
+    select 1
+    from storage.buckets b
+    where b.id = 'employee-profile-images'
+      and not b.public
+  ) then
+    raise exception 'Private employee-profile-images bucket is missing';
+  end if;
+  if not exists (
+    select 1
+    from pg_catalog.pg_attribute a
+    where a.attrelid = 'public.daily_target_entries'::pg_catalog.regclass
+      and a.attname = 'night_ot_hours'
+      and not a.attisdropped
+  ) then
+    raise exception 'Daily Work attendance and OT calculation columns are missing';
   end if;
   if not exists (
     select 1

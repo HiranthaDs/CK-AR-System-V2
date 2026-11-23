@@ -273,6 +273,10 @@ export interface Employee extends JsonRecord {
     account_name?: string
     account_number?: string
   } | null
+  profile_picture_path?: string | null
+  education_qualifications?: string | null
+  other_qualifications?: string | null
+  profile_notes?: string | null
   status: 'active' | 'inactive'
   created_at?: string | null
   updated_at?: string | null
@@ -305,7 +309,12 @@ export interface PieceworkRate extends JsonRecord {
   status: 'active' | 'inactive'
   notes?: string | null
   type?: string
-  conversion_type?: { id?: Id; name: string; default_chip_name?: string | null; status?: 'active' | 'inactive' } | null
+  conversion_type?: {
+    id?: Id
+    name: string
+    default_chip_name?: string | null
+    status?: 'active' | 'inactive'
+  } | null
 }
 
 export interface BulkRmRate extends JsonRecord {
@@ -423,7 +432,11 @@ export interface Conversion extends JsonRecord {
   output_item_name?: string
   source_item?: { name: string; sku?: string | null } | null
   output_item?: { name: string; sku?: string | null } | null
-  conversion_type?: { id?: Id; name: string; default_chip_name?: string | null } | null
+  conversion_type?: {
+    id?: Id
+    name: string
+    default_chip_name?: string | null
+  } | null
 }
 
 export interface DailyPiecework extends JsonRecord {
@@ -447,10 +460,42 @@ export interface DailyWork extends JsonRecord {
   daily_target: Numeric
   target_percent: Numeric
   target_amount: Numeric
+  is_absent?: boolean
+  in_time?: string | null
+  out_time?: string | null
+  total_hours?: Numeric
+  day_hours?: Numeric
+  night_ot_hours?: Numeric
+  is_late?: boolean
+  activity?: string | null
   notes?: string | null
   status: string
   claimed_payroll_id?: Id | null
   claimed_payroll_reference?: string | null
+}
+
+export interface ShiftSettings extends JsonRecord {
+  company_id: Id
+  day_start: string
+  day_end: string
+  night_start: string
+  night_end: string
+  updated_at?: string | null
+}
+
+export interface SalaryAdvance extends JsonRecord {
+  id: Id
+  reference_no: string
+  employee_id: Id
+  employee_no?: string | null
+  employee_name?: string | null
+  advance_date: string
+  amount: Numeric
+  notes?: string | null
+  status: 'posted' | 'reversed'
+  claimed_payroll_id?: Id | null
+  claimed_payroll_reference?: string | null
+  created_at?: string | null
 }
 
 export interface OvertimeRecord extends JsonRecord {
@@ -464,7 +509,7 @@ export interface OvertimeRecord extends JsonRecord {
   rate: Numeric
   amount: Numeric
   target_rate?: Numeric
-  target_percent?: Numeric
+  target_hours?: Numeric
   target_amount?: Numeric
   notes?: string | null
   revision?: number
@@ -509,7 +554,12 @@ export interface ProductionRun extends JsonRecord {
   raw_material_quantity_kg?: Numeric
   unit_cost?: Numeric
   chip_item?: { name: string; sku?: string | null } | null
-  finished_item?: { name: string; sku?: string | null; product_type?: string | null; selling_price?: Numeric } | null
+  finished_item?: {
+    name: string
+    sku?: string | null
+    product_type?: string | null
+    selling_price?: Numeric
+  } | null
   operator?: { name: string; employee_no?: string | null } | null
 }
 
@@ -663,28 +713,32 @@ export interface Payroll extends JsonRecord {
   balance_due?: Numeric | null
   payment_status?: string
   status: string
-  employee?: Partial<Pick<
-    Employee,
-    | 'id'
-    | 'employee_no'
-    | 'name'
-    | 'nic'
-    | 'phone'
-    | 'address'
-    | 'epf_no'
-    | 'etf_ref'
-    | 'joined_date'
-    | 'job_role'
-    | 'employment_type'
-    | 'shift'
-    | 'pay_model'
-    | 'monthly_rate'
-    | 'daily_rate'
-    | 'ot_rate'
-    | 'monthly_incentive'
-    | 'bank_details'
-    | 'status'
-  >> & { name: string } | null
+  employee?:
+    | (Partial<
+        Pick<
+          Employee,
+          | 'id'
+          | 'employee_no'
+          | 'name'
+          | 'nic'
+          | 'phone'
+          | 'address'
+          | 'epf_no'
+          | 'etf_ref'
+          | 'joined_date'
+          | 'job_role'
+          | 'employment_type'
+          | 'shift'
+          | 'pay_model'
+          | 'monthly_rate'
+          | 'daily_rate'
+          | 'ot_rate'
+          | 'monthly_incentive'
+          | 'bank_details'
+          | 'status'
+        >
+      > & { name: string })
+    | null
   employee_name?: string | null
   employee_no?: string | null
   payroll_details: PayrollLine[]
