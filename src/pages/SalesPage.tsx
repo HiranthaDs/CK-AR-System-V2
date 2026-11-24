@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Banknote, ClipboardList, Download, ExternalLink, FileBarChart, FileText, MessageCircle, Pencil, Plus, Printer, ReceiptText, RotateCcw, ShoppingCart, Trash2, WalletCards } from 'lucide-react'
 import { z } from 'zod/v3'
 import { api } from '../lib/api'
@@ -9,6 +10,7 @@ import { localIsoDate, money, numberValue, quantity, shortDate, titleCase } from
 import { invoiceWhatsAppMessage, normalizeWhatsAppPhone, saleLineName, suggestedUnitPrice } from '../lib/salesInvoice'
 import { downloadQuotationPdf, printQuotationPdf, quotationWhatsAppMessage, shareQuotationPdf } from '../lib/quotationPdf'
 import { downloadSalesInvoicePdf, printSalesInvoicePdf, shareSalesInvoicePdf } from '../lib/salesInvoicePdf'
+import { printCustomerOrderPdf } from '../lib/customerOrderPdf'
 import type { CompanyProfile, CustomerOrder, CustomerOrderStatus, InventoryPosition, MutationReceipt, Page, Payment, Quotation, Sale } from '../types/api'
 import { useAppContext } from '../layout/AppShell'
 import { useToast } from '../components/Toast'
@@ -37,6 +39,7 @@ import {
 } from '../components/UI'
 
 type SalesTab = 'orders' | 'invoices' | 'quotations' | 'outstanding' | 'report'
+const salesTabs: SalesTab[] = ['orders', 'invoices', 'quotations', 'outstanding', 'report']
 
 const paymentMethods = ['cash', 'bank_transfer', 'cheque', 'credit', 'accounts_receivable', 'other'] as const
 const lineSchema = z.object({
@@ -127,7 +130,14 @@ export function SalesPage() {
   const { year } = useAppContext()
   const toast = useToast()
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<SalesTab>('invoices')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const tab: SalesTab = requestedTab && salesTabs.includes(requestedTab as SalesTab) ? requestedTab as SalesTab : 'invoices'
+  const setTab = (value: SalesTab) => setSearchParams((current) => {
+    const next = new URLSearchParams(current)
+    next.set('tab', value)
+    return next
+  }, { replace: true })
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [saleOpen, setSaleOpen] = useState(false)
@@ -138,6 +148,7 @@ export function SalesPage() {
   const [quotationActionId, setQuotationActionId] = useState<string | null>(null)
   const [cancelQuotation, setCancelQuotation] = useState<Quotation | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<CustomerOrder | null>(null)
+  const [printingOrderId, setPrintingOrderId] = useState<string | null>(null)
   const [paymentSale, setPaymentSale] = useState<Sale | null>(null)
   const [reverseSale, setReverseSale] = useState<Sale | null>(null)
   const [reversePayment, setReversePayment] = useState<{ sale: Sale; payment: Payment } | null>(null)
@@ -167,6 +178,12 @@ export function SalesPage() {
     queryKey: ['customer-orders', year, page, search],
     queryFn: ({ signal }) => api.list<CustomerOrder>('/customer-orders', { ...dateQuery, page, page_size: pageSize, q: search }, signal),
     enabled: tab === 'orders',
+  })
+  const ordersCompanyQuery = useQuery({
+    queryKey: ['company-profile'],
+    queryFn: ({ signal }) => api.get<CompanyProfile>('/company-profile', undefined, signal),
+    enabled: tab === 'orders',
+    staleTime: 60_000,
   })
 
   const invalidate = async () => {
@@ -267,6 +284,17 @@ export function SalesPage() {
   const visiblePaid = visibleRows.reduce((sum, sale) => sum + numberValue(sale.paid_amount), 0)
   const visibleDue = visibleRows.reduce((sum, sale) => sum + numberValue(sale.balance_due), 0)
   const changeTab = (value: SalesTab) => { setTab(value); setPage(1); setSearch('') }
+  const printOrder = async (order: CustomerOrder) => {
+    setPrintingOrderId(order.id)
+    try {
+      const opened = await printCustomerOrderPdf({ order, ...(ordersCompanyQuery.data ? { company: ordersCompanyQuery.data } : {}) })
+      if (!opened) toast.error('Shipping PDF was blocked', 'Allow pop-ups for this site, then try again.')
+    } catch (error) {
+      toast.error('Shipping PDF was not prepared', error instanceof Error ? error.message : 'Try again.')
+    } finally {
+      setPrintingOrderId(null)
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -285,7 +313,7 @@ export function SalesPage() {
         { value: 'report', label: 'Sales report', icon: FileBarChart },
       ]} />
 
-      {tab === 'orders' ? <CustomerOrdersList query={ordersQuery} page={page} setPage={setPage} search={search} setSearch={setSearch} onOpen={setSelectedOrder} /> : tab === 'quotations' ? <QuotationList query={quotationsQuery} page={page} setPage={setPage} search={search} setSearch={setSearch} editingId={editQuotationMutation.isPending ? editQuotationMutation.variables : undefined} onAdd={() => { setEditingQuotation(null); setQuotationOpen(true) }} onPreview={(quotation) => setQuotationActionId(quotation.id)} onEdit={(quotation) => editQuotationMutation.mutate(quotation.id)} onCancel={setCancelQuotation} /> : <Card className={tab === 'report' ? 'print-area' : undefined}>
+      {tab === 'orders' ? <CustomerOrdersList query={ordersQuery} page={page} setPage={setPage} search={search} setSearch={setSearch} onOpen={setSelectedOrder} onPrint={(order) => void printOrder(order)} printingOrderId={printingOrderId} /> : tab === 'quotations' ? <QuotationList query={quotationsQuery} page={page} setPage={setPage} search={search} setSearch={setSearch} editingId={editQuotationMutation.isPending ? editQuotationMutation.variables : undefined} onAdd={() => { setEditingQuotation(null); setQuotationOpen(true) }} onPreview={(quotation) => setQuotationActionId(quotation.id)} onEdit={(quotation) => editQuotationMutation.mutate(quotation.id)} onCancel={setCancelQuotation} /> : <Card className={tab === 'report' ? 'print-area' : undefined}>
         <SectionTitle
           title={tab === 'outstanding' ? 'Outstanding invoices' : tab === 'report' ? 'Sales report' : 'Posted invoices'}
           description="Search is executed by the API and results remain server-paginated."
@@ -309,7 +337,7 @@ export function SalesPage() {
       <QuotationActionsDialog quotationId={quotationActionId} onClose={() => setQuotationActionId(null)} />
       <InvoiceActionsDialog saleId={invoiceActionId} onClose={() => setInvoiceActionId(null)} />
       <PaymentDialog sale={paymentSale} mutation={paymentMutation} onReverse={(payment) => { if (paymentSale) setReversePayment({ sale: paymentSale, payment }) }} onClose={() => setPaymentSale(null)} />
-      <CustomerOrderDialog key={selectedOrder?.id ?? 'closed-order'} order={selectedOrder} mutation={orderStatusMutation} onClose={() => setSelectedOrder(null)} />
+      <CustomerOrderDialog key={selectedOrder?.id ?? 'closed-order'} order={selectedOrder} mutation={orderStatusMutation} printing={printingOrderId === selectedOrder?.id} onPrint={(order) => void printOrder(order)} onClose={() => setSelectedOrder(null)} />
       <ConfirmDialog open={Boolean(reverseSale)} title="Reverse this invoice?" message={`${reverseSale?.invoice_no ?? 'This invoice'} will remain in the audit trail. Only this invoice's stock, revenue, COGS, and receipts will be offset atomically; other invoices remain unchanged.`} destructive confirmLabel="Post reversal" busy={reverseSaleMutation.isPending} onCancel={() => setReverseSale(null)} onConfirm={() => { if (reverseSale) reverseSaleMutation.mutate(reverseSale) }} />
       <ConfirmDialog open={Boolean(reversePayment)} title="Reverse this receipt?" message={`${reversePayment?.payment.reference_no ?? 'This receipt'} will remain visible. Only this receipt's accounting effect and its parent invoice balance will be updated; other receipts and invoices remain unchanged.`} destructive confirmLabel="Reverse receipt" busy={reversePaymentMutation.isPending} onCancel={() => setReversePayment(null)} onConfirm={() => { if (reversePayment) reversePaymentMutation.mutate(reversePayment) }} />
       <ConfirmDialog open={Boolean(cancelQuotation)} title="Cancel this quotation?" message={`${cancelQuotation?.quotation_no ?? 'This quotation'} will remain visible in quotation history and can no longer be edited. No other quotation, invoice, stock, or accounting record will be changed.`} destructive confirmLabel="Cancel quotation" busy={cancelQuotationMutation.isPending} onCancel={() => setCancelQuotation(null)} onConfirm={() => { if (cancelQuotation) cancelQuotationMutation.mutate(cancelQuotation) }} />
@@ -327,13 +355,15 @@ function orderStatusTone(status: CustomerOrderStatus) {
   return 'neutral' as const
 }
 
-function CustomerOrdersList({ query, page, setPage, search, setSearch, onOpen }: {
+function CustomerOrdersList({ query, page, setPage, search, setSearch, onOpen, onPrint, printingOrderId }: {
   query: ReturnType<typeof useQuery<Page<CustomerOrder>>>
   page: number
   setPage: (page: number) => void
   search: string
   setSearch: (value: string) => void
   onOpen: (order: CustomerOrder) => void
+  onPrint: (order: CustomerOrder) => void
+  printingOrderId: string | null
 }) {
   const rows = query.data?.items ?? []
   return <Card>
@@ -341,27 +371,29 @@ function CustomerOrdersList({ query, page, setPage, search, setSearch, onOpen }:
     <InlineNotice tone="success" title="No stock information is shared">Customers see active product details and selling prices only. Confirm availability before moving an order to Confirmed.</InlineNotice>
     <div className="toolbar"><SearchBox value={search} onChange={(value) => { setSearch(value); setPage(1) }} placeholder="Search customer name" /></div>
     {query.isLoading ? <LoadingState label="Loading customer orders…" /> : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} /> : rows.length ? <>
-      <TableWrap><table><thead><tr><th>Order / received</th><th>Customer</th><th className="numeric">Items</th><th className="numeric">Total</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((order) => <tr key={order.id}>
-        <td><strong className="mono">{order.order_no}</strong><span className="table-subtext">{shortDate(order.created_at)}</span></td>
+      <TableWrap><table><thead><tr><th>Order / received</th><th>Customer</th><th className="numeric">Items</th><th className="numeric">Total</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{rows.map((order) => <tr key={order.id} className={order.source === 'catalogue' && order.status === 'pending' ? 'customer-order-row--new' : undefined}>
+        <td><strong className="mono">{order.order_no}</strong><span className="table-subtext">{shortDate(order.created_at)}</span>{order.source === 'catalogue' && order.status === 'pending' ? <span className="customer-order-new-label">New catalogue order</span> : null}</td>
         <td><strong>{order.customer_name}</strong><span className="table-subtext">{order.customer_phone}{order.customer_email ? ` · ${order.customer_email}` : ''}</span></td>
         <td className="numeric">{order.customer_order_items?.length ?? 0}</td>
         <td className="numeric"><strong>{money(order.total_amount)}</strong></td>
         <td><Badge tone={orderStatusTone(order.status)}>{titleCase(order.status)}</Badge></td>
-        <td><Button size="small" variant="ghost" icon={ClipboardList} onClick={() => onOpen(order)}>Review</Button></td>
+        <td><ActionMenu><Button size="small" variant="ghost" icon={ClipboardList} onClick={() => onOpen(order)}>Review</Button><Button size="small" variant="ghost" icon={Printer} loading={printingOrderId === order.id} disabled={Boolean(printingOrderId && printingOrderId !== order.id)} onClick={() => onPrint(order)}>Print shipping PDF</Button></ActionMenu></td>
       </tr>)}</tbody></table></TableWrap>
       <Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} />
     </> : <EmptyState message="No customer orders match this period and search." />}
   </Card>
 }
 
-function CustomerOrderDialog({ order, mutation, onClose }: {
+function CustomerOrderDialog({ order, mutation, printing, onPrint, onClose }: {
   order: CustomerOrder | null
   mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { order: CustomerOrder; status: CustomerOrderStatus }>>
+  printing: boolean
+  onPrint: (order: CustomerOrder) => void
   onClose: () => void
 }) {
   const [status, setStatus] = useState<CustomerOrderStatus>(order?.status ?? 'pending')
   const lines = order?.customer_order_items ?? []
-  return <Dialog open={Boolean(order)} title={order ? `Order ${order.order_no}` : 'Customer order'} description="Review the request, confirm availability with the customer, and keep the status current." size="wide" onClose={onClose} closeDisabled={mutation.isPending} footer={<><Button variant="secondary" onClick={onClose}>Close</Button><Button icon={ClipboardList} loading={mutation.isPending} disabled={!order || status === order.status} onClick={() => { if (order) mutation.mutate({ order, status }) }}>Update status</Button></>}>
+  return <Dialog open={Boolean(order)} title={order ? `Order ${order.order_no}` : 'Customer order'} description="Review the request, print the shipping document, and keep the status current." size="wide" onClose={onClose} closeDisabled={mutation.isPending || printing} footer={<><Button variant="secondary" onClick={onClose} disabled={printing}>Close</Button><Button variant="secondary" icon={Printer} loading={printing} disabled={!order || mutation.isPending} onClick={() => { if (order) onPrint(order) }}>Print shipping PDF</Button><Button icon={ClipboardList} loading={mutation.isPending} disabled={!order || printing || status === order.status} onClick={() => { if (order) mutation.mutate({ order, status }) }}>Update status</Button></>}>
     {order ? <div className="order-review">
       <div className="order-review__summary">
         <section><span>Customer</span><strong>{order.customer_name}</strong><small>{order.customer_phone}</small><small>{order.customer_email || 'No email provided'}</small></section>
@@ -564,7 +596,7 @@ function SalesTable({ query, page, setPage, editingSaleId, onInvoice, onEdit, on
         <td><strong>{sale.customer_name}</strong><span className="table-subtext">{sale.customer_phone || 'No phone'}</span></td>
         <td className="numeric">{saleLines(sale).length}</td><td className="numeric">{money(sale.total_amount)}</td><td className="numeric">{money(sale.paid_amount)}</td><td className="numeric"><strong>{money(sale.balance_due)}</strong></td>
         <td><div className="status-stack"><Badge tone={statusTone(sale.status === 'reversed' ? 'reversed' : sale.document_status === 'completed' ? 'posted' : undefined)}>{titleCase(sale.status === 'reversed' ? 'reversed' : sale.document_status ?? 'issued')}</Badge>{sale.status !== 'reversed' ? <Badge tone={statusTone(sale.payment_status)}>{titleCase(sale.payment_status ?? 'unpaid')}</Badge> : null}</div></td>
-        <td className="no-print"><div className="row-actions"><Button size="small" variant="ghost" icon={ReceiptText} onClick={() => onInvoice(sale)}>Invoice</Button><Button size="small" variant="ghost" icon={Banknote} disabled={sale.status === 'reversed'} onClick={() => onPayment(sale)}>Receipts</Button><Button size="small" variant="ghost" icon={Pencil} loading={editingSaleId === sale.id} disabled={sale.status === 'reversed' || Boolean(editingSaleId && editingSaleId !== sale.id)} onClick={() => onEdit(sale)}>Correct</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={sale.status === 'reversed'} onClick={() => onReverse(sale)}>Reverse</Button></div></td>
+        <td className="no-print"><ActionMenu><Button size="small" variant="ghost" icon={ReceiptText} onClick={() => onInvoice(sale)}>Invoice</Button><Button size="small" variant="ghost" icon={Banknote} disabled={sale.status === 'reversed'} onClick={() => onPayment(sale)}>Receipts</Button><Button size="small" variant="ghost" icon={Pencil} loading={editingSaleId === sale.id} disabled={sale.status === 'reversed' || Boolean(editingSaleId && editingSaleId !== sale.id)} onClick={() => onEdit(sale)}>Correct</Button><Button size="small" variant="ghost" icon={RotateCcw} disabled={sale.status === 'reversed'} onClick={() => onReverse(sale)}>Reverse</Button></ActionMenu></td>
       </tr>)}</tbody></table></TableWrap><Pagination page={query.data?.page ?? page} pages={query.data?.pages ?? 0} total={query.data?.total ?? 0} onChange={setPage} /></>
   )
 }

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CheckCircle2, ChevronRight, Minus, PackageOpen, Plus, ShoppingBag, Sparkles, Trash2 } from 'lucide-react'
+import { CheckCircle2, ChevronRight, MessageCircle, Minus, PackageOpen, Plus, ShoppingBag, Sparkles, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link } from 'react-router-dom'
@@ -9,6 +9,7 @@ import { Button, EmptyState, ErrorState, Field, Input, LoadingState, Textarea } 
 import { Dialog } from '../components/Dialog'
 import { makeRequestId, publicApi } from '../lib/api'
 import { money, numberValue } from '../lib/format'
+import { catalogOrderWhatsAppUrl } from '../lib/catalogOrderWhatsApp'
 import type { PublicCatalogItem, PublicOrderReceipt } from '../types/api'
 import { BrandLogo } from '../components/BrandLogo'
 
@@ -25,11 +26,47 @@ type OrderValues = z.infer<typeof orderSchema>
 interface CatalogResponse { items: PublicCatalogItem[] }
 type Cart = Record<string, number>
 
+function CatalogQuantityInput({ product, quantity, onChange }: {
+  product: PublicCatalogItem
+  quantity: number
+  onChange: (quantity: number) => void
+}) {
+  const [draft, setDraft] = useState(String(quantity))
+  const [lastQuantity, setLastQuantity] = useState(quantity)
+  if (quantity !== lastQuantity) {
+    setLastQuantity(quantity)
+    setDraft(String(quantity))
+  }
+
+  return <input
+    type="number"
+    min="1"
+    max="10000"
+    step="1"
+    inputMode="numeric"
+    value={draft}
+    aria-label={`${product.name} quantity`}
+    onFocus={(event) => event.currentTarget.select()}
+    onChange={(event) => {
+      const value = event.currentTarget.value
+      setDraft(value)
+      const parsed = Number(value)
+      if (value && Number.isFinite(parsed)) onChange(parsed)
+    }}
+    onBlur={() => {
+      const parsed = Number(draft)
+      if (!draft || !Number.isFinite(parsed) || parsed < 1) setDraft(String(quantity))
+      else onChange(parsed)
+    }}
+  />
+}
+
 export function PublicCatalogPage() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('All')
   const [cart, setCart] = useState<Cart>({})
   const [receipt, setReceipt] = useState<PublicOrderReceipt | null>(null)
+  const [whatsappUrl, setWhatsappUrl] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<PublicCatalogItem | null>(null)
   const [requestKey, setRequestKey] = useState(() => makeRequestId())
   const form = useForm<OrderValues>({
@@ -56,10 +93,12 @@ export function PublicCatalogPage() {
 
   const updateQuantity = (productId: string, quantity: number) => {
     setReceipt(null)
+    setWhatsappUrl(null)
     setCart((current) => {
       const next = { ...current }
-      if (quantity <= 0) delete next[productId]
-      else next[productId] = Math.min(10000, quantity)
+      const normalized = Number.isFinite(quantity) ? Math.min(10000, Math.max(0, Math.trunc(quantity))) : 0
+      if (normalized <= 0) delete next[productId]
+      else next[productId] = normalized
       return next
     })
   }
@@ -72,7 +111,18 @@ export function PublicCatalogPage() {
       notes: values.notes || undefined,
       items: cartLines.map((line) => ({ item_id: line.product.id, quantity: line.quantity })),
     }, requestKey),
-    onSuccess: (result) => {
+    onSuccess: (result, values) => {
+      setWhatsappUrl(catalogOrderWhatsAppUrl({
+        receipt: result,
+        customer: {
+          name: values.customer_name,
+          phone: values.customer_phone,
+          ...(values.customer_email ? { email: values.customer_email } : {}),
+          ...(values.customer_address ? { address: values.customer_address } : {}),
+          ...(values.notes ? { notes: values.notes } : {}),
+        },
+        lines: cartLines,
+      }))
       setReceipt(result)
       setCart({})
       setRequestKey(makeRequestId())
@@ -105,14 +155,14 @@ export function PublicCatalogPage() {
             const quantity = cart[product.id] ?? 0
             return <article className="catalog-product-card" key={product.id}>
               <button type="button" className="catalog-product-card__image" onClick={() => setSelectedProduct(product)} aria-label={`View ${product.name} details`}>{product.image_url ? <img src={product.image_url} alt={product.name} loading="lazy" /> : <PackageOpen size={40} aria-hidden="true" />}<span>View details</span></button>
-              <div className="catalog-product-card__body"><span>{product.category}</span><h2>{product.name}</h2><p>{product.description || 'Contact us for product specifications and available options.'}</p><div className="catalog-product-card__footer"><strong>{money(product.selling_price)}</strong>{quantity ? <div className="quantity-stepper"><button type="button" onClick={() => updateQuantity(product.id, quantity - 1)} aria-label={`Remove one ${product.name}`}><Minus size={15} /></button><span>{quantity}</span><button type="button" onClick={() => updateQuantity(product.id, quantity + 1)} aria-label={`Add one ${product.name}`}><Plus size={15} /></button></div> : <Button size="small" icon={Plus} onClick={() => updateQuantity(product.id, 1)}>Add</Button>}</div></div>
+              <div className="catalog-product-card__body"><span>{product.category}</span><h2>{product.name}</h2><p>{product.description || 'Contact us for product specifications and available options.'}</p><div className="catalog-product-card__footer"><strong>{money(product.selling_price)}</strong>{quantity ? <div className="quantity-stepper"><button type="button" onClick={() => updateQuantity(product.id, quantity - 1)} aria-label={`Remove one ${product.name}`}><Minus size={15} /></button><CatalogQuantityInput product={product} quantity={quantity} onChange={(value) => updateQuantity(product.id, value)} /><button type="button" onClick={() => updateQuantity(product.id, quantity + 1)} aria-label={`Add one ${product.name}`}><Plus size={15} /></button></div> : <Button size="small" icon={Plus} onClick={() => updateQuantity(product.id, 1)}>Add</Button>}</div></div>
             </article>
           })}</div> : <EmptyState message="No products match this search." />}
         </div>
 
         <aside className="catalog-cart">
           <div className="catalog-cart__heading"><div><ShoppingBag size={22} /><span><strong>Your order</strong><small>{itemCount ? `${itemCount} item${itemCount === 1 ? '' : 's'} selected` : 'Choose products to begin'}</small></span></div><strong>{money(total)}</strong></div>
-          {receipt ? <div className="catalog-order-success"><CheckCircle2 size={42} /><h2>Order received</h2><p>Thank you. Our team will review your request and contact you.</p><div><span>Order reference</span><strong>{receipt.order_no}</strong></div><Button onClick={() => setReceipt(null)}>Place another order</Button></div> : <>
+          {receipt ? <div className="catalog-order-success"><CheckCircle2 size={42} /><h2>Order saved</h2><p>Your full order is now in our admin portal. Send the saved order details to our WhatsApp so the team can respond quickly.</p><div><span>Order reference</span><strong>{receipt.order_no}</strong></div>{whatsappUrl ? <a className="button button--primary button--medium" href={whatsappUrl} target="_blank" rel="noopener noreferrer"><MessageCircle size={17} aria-hidden="true" /> Send order to WhatsApp</a> : null}<Button variant="secondary" onClick={() => { setReceipt(null); setWhatsappUrl(null) }}>Place another order</Button></div> : <>
             {cartLines.length ? <div className="catalog-cart__lines">{cartLines.map(({ product, quantity }) => <div className="catalog-cart-line" key={product.id}><div>{product.image_url ? <img src={product.image_url} alt="" /> : <PackageOpen size={18} />}<span><strong>{product.name}</strong><small>{quantity} × {money(product.selling_price)}</small></span></div><button type="button" onClick={() => updateQuantity(product.id, 0)} aria-label={`Remove ${product.name}`}><Trash2 size={16} /></button></div>)}</div> : <div className="catalog-cart__empty"><ShoppingBag size={30} /><span>Your selected products will appear here.</span></div>}
             <form className="catalog-checkout" onSubmit={(event) => void submit(event)}>
               <h2>Contact details</h2>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BadgeDollarSign,
+  Bell,
   ClipboardList,
   Factory,
   Gauge,
@@ -19,13 +20,14 @@ import {
 } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { api, setActiveCompanyId } from '../lib/api'
-import type { Me } from '../types/api'
+import type { CustomerOrder, Me, Page } from '../types/api'
 import { getCompanyPortal } from '../lib/companyPortal'
 import { useAuth } from '../auth/AuthProvider'
 import { useToast } from '../components/Toast'
 import { Badge, Button, ErrorState, LoadingState } from '../components/UI'
 import { BrandLogo } from '../components/BrandLogo'
 import { currentFiscalYear, fiscalYearOptions } from '../lib/fiscalYear'
+import { money, shortDate } from '../lib/format'
 
 const navItems: Array<{ to: string; label: string; icon: typeof Gauge; permissions?: string[] }> = [
   { to: '/dashboard', label: 'Overview', icon: Gauge, permissions: ['dashboard.read'] },
@@ -95,6 +97,20 @@ export function AppShell() {
     enabled: Boolean(portal),
     staleTime: 5 * 60_000,
   })
+  const canReadSales = Boolean(meQuery.data && canUseNavigation(meQuery.data, ['sales.read', 'sales.write']))
+  const pendingOrdersQuery = useQuery({
+    queryKey: ['customer-orders', 'notifications', meQuery.data?.active_company_id],
+    queryFn: ({ signal }) => api.list<CustomerOrder>('/customer-orders', {
+      status: 'pending',
+      page: 1,
+      page_size: 5,
+      sort: 'created_at',
+      descending: true,
+    }, signal),
+    enabled: canReadSales,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  })
 
   const logOut = async () => {
     try {
@@ -119,6 +135,9 @@ export function AppShell() {
   const initials = identity.split(/\s|@/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
   const outletContext: AppOutletContext = { me, basePath, year, setYear }
   const visibleNavItems = navItems.filter((item) => canUseNavigation(me, item.permissions))
+  const pendingOrderPage: Page<CustomerOrder> | undefined = pendingOrdersQuery.data
+  const pendingOrderCount = pendingOrderPage?.total ?? 0
+  const pendingOrders = pendingOrderPage?.items ?? []
 
   return (
     <div className="app-shell">
@@ -134,7 +153,7 @@ export function AppShell() {
             const Icon = item.icon
             return (
               <NavLink key={item.to} to={`${basePath}${item.to}`} onClick={() => setDrawerOpen(false)} className={({ isActive }) => `nav-link${isActive ? ' nav-link--active' : ''}`}>
-                <Icon size={19} /><span>{item.label}</span>
+                <Icon size={19} /><span>{item.label}</span>{item.to === '/sales' && pendingOrderCount > 0 ? <span className="nav-order-count" aria-label={`${pendingOrderCount} pending orders`}>{pendingOrderCount > 99 ? '99+' : pendingOrderCount}</span> : null}
               </NavLink>
             )
           })}
@@ -171,6 +190,19 @@ export function AppShell() {
             <span className={`status-dot ${online ? 'status-dot--online' : ''}`} aria-hidden="true" />
           </div>
           <div className="topbar__actions">
+            {canReadSales ? <details className="order-notifications">
+              <summary className="order-notifications__trigger" aria-label={pendingOrderCount ? `${pendingOrderCount} pending order notifications` : 'No pending order notifications'} title="Customer order notifications">
+                <Bell size={20} aria-hidden="true" />
+                {pendingOrderCount > 0 ? <span>{pendingOrderCount > 99 ? '99+' : pendingOrderCount}</span> : null}
+              </summary>
+              <div className="order-notifications__panel">
+                <header><div><strong>New catalogue orders</strong><span>{pendingOrderCount ? `${pendingOrderCount} awaiting review` : 'You are up to date'}</span></div></header>
+                {pendingOrdersQuery.isLoading ? <div className="order-notifications__state">Loading orders…</div> : pendingOrdersQuery.isError ? <div className="order-notifications__state order-notifications__state--error">Orders could not be loaded.</div> : pendingOrders.length ? <div className="order-notifications__list">{pendingOrders.map((order) => <NavLink className="order-notification-item" key={order.id} to={`${basePath}/sales?tab=orders`} onClick={(event) => event.currentTarget.closest('details')?.removeAttribute('open')}>
+                  <span><strong>{order.customer_name}</strong><small>{order.order_no} · {shortDate(order.created_at)}</small></span><strong>{money(order.total_amount)}</strong>
+                </NavLink>)}</div> : <div className="order-notifications__state">No pending catalogue orders.</div>}
+                <NavLink className="order-notifications__footer" to={`${basePath}/sales?tab=orders`} onClick={(event) => event.currentTarget.closest('details')?.removeAttribute('open')}><ClipboardList size={16} /> View all customer orders</NavLink>
+              </div>
+            </details> : null}
             <label className="year-picker"><span>Fiscal year</span><select value={year} onChange={(event) => setYear(Number(event.target.value))}>
               {fiscalYearOptions(year).map((option) => <option key={option}>{option}</option>)}
             </select></label>
