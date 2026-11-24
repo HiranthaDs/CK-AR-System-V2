@@ -32,8 +32,28 @@ alter table public.overtime_entries
   alter column target_percent type numeric(10,6)
     using target_percent::numeric(10,6);
 
-update public.overtime_entries
-set target_percent = pg_catalog.round(hours * target_percent / 100, 6);
+-- The company-context trigger also protects migration-time updates. Backfill
+-- one tenant at a time under the same transaction-local context used by the
+-- ERP RPC facade so a cross-company write can never slip through.
+do $backfill_overtime_target_hours$
+declare
+  v_company_id uuid;
+begin
+  for v_company_id in
+    select c.id from public.companies c order by c.id
+  loop
+    perform pg_catalog.set_config(
+      'app.current_company_id',
+      v_company_id::text,
+      true
+    );
+    update public.overtime_entries ot
+    set target_percent = pg_catalog.round(ot.hours * ot.target_percent / 100, 6)
+    where ot.company_id = v_company_id;
+  end loop;
+  perform pg_catalog.set_config('app.current_company_id', '', true);
+end;
+$backfill_overtime_target_hours$;
 
 alter table public.overtime_entries
   add column target_amount numeric(20,2)

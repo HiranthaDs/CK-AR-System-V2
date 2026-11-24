@@ -32,6 +32,7 @@ import {
 import { z } from 'zod/v3'
 import { api, getActiveCompanyId } from '../lib/api'
 import { supabase } from '../lib/supabase'
+import { dateForFiscalYear, monthForFiscalYear } from '../lib/fiscalYear'
 import {
   localIsoDate,
   localIsoMonth,
@@ -367,11 +368,6 @@ function statusTone(status: string | null | undefined) {
   return 'neutral' as const
 }
 
-function monthForYear(year: number, current = localIsoMonth()) {
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(current) ? current.slice(5) : '01'
-  return `${year}-${month}`
-}
-
 export function EmployeesPage() {
   const { year, me } = useAppContext()
   const toast = useToast()
@@ -407,7 +403,7 @@ export function EmployeesPage() {
   const [postPayroll, setPostPayroll] = useState<Payroll | null>(null)
   const [postPayrollStep, setPostPayrollStep] = useState<'payment' | 'delivery'>('payment')
   const [reportMonthSelection, setReportMonthSelection] = useState(() => localIsoMonth())
-  const reportMonth = monthForYear(year, reportMonthSelection)
+  const reportMonth = monthForFiscalYear(year, reportMonthSelection)
   const [exportingPayroll, setExportingPayroll] = useState(false)
 
   const period = { from_date: `${year}-01-01`, to_date: `${year}-12-31` }
@@ -919,8 +915,9 @@ export function EmployeesPage() {
         }}
       />
       <EmployeeDailyLogDialog
-        key={dailyLogEmployee?.id ?? 'closed'}
+        key={`${dailyLogEmployee?.id ?? 'closed'}-${year}`}
         employee={dailyLogEmployee}
+        year={year}
         onClose={() => setDailyLogEmployee(null)}
       />
       <EmployeeProfileDialog
@@ -930,6 +927,7 @@ export function EmployeesPage() {
       />
       <DailyWorkDialog
         open={workOpen}
+        year={year}
         record={editingWork}
         mutation={workMutation}
         onClose={() => {
@@ -961,6 +959,7 @@ export function EmployeesPage() {
       />
       <OvertimeDialog
         open={overtimeOpen}
+        year={year}
         record={editingOvertime}
         initialEmployee={overtimePrefillEmployee}
         mutation={overtimeMutation}
@@ -972,6 +971,7 @@ export function EmployeesPage() {
       />
       <SalaryAdvanceDialog
         open={advanceOpen}
+        year={year}
         initialEmployee={advancePrefillEmployee}
         mutation={salaryAdvanceMutation}
         onClose={() => {
@@ -981,6 +981,7 @@ export function EmployeesPage() {
       />
       <PayrollDialog
         open={payrollOpen}
+        year={year}
         record={editingPayroll}
         mutation={payrollMutation}
         onClose={() => {
@@ -2618,11 +2619,13 @@ const defaultShiftSettings: ShiftSettings = {
 
 function DailyWorkDialog({
   open,
+  year,
   record,
   mutation,
   onClose,
 }: {
   open: boolean
+  year: number
   record: DailyWork | null
   mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string | undefined; body: DailyWorkValues }>>
   onClose: () => void
@@ -2632,7 +2635,7 @@ function DailyWorkDialog({
     resolver: zodResolver(dailyWorkSchema),
     defaultValues: {
       employee_id: record?.employee_id ?? '',
-      work_date: record?.work_date ?? localIsoDate(),
+      work_date: record?.work_date ?? dateForFiscalYear(year, localIsoDate()),
       is_absent: record?.is_absent ?? false,
       in_time: timeInputValue(record?.in_time, '08:30'),
       out_time: timeInputValue(record?.out_time, '17:30'),
@@ -2658,7 +2661,7 @@ function DailyWorkDialog({
     setEmployee(null)
     form.reset({
       employee_id: record?.employee_id ?? '',
-      work_date: record?.work_date ?? localIsoDate(),
+      work_date: record?.work_date ?? dateForFiscalYear(year, localIsoDate()),
       is_absent: record?.is_absent ?? false,
       in_time: timeInputValue(record?.in_time, '08:30'),
       out_time: timeInputValue(record?.out_time, '17:30'),
@@ -2667,7 +2670,7 @@ function DailyWorkDialog({
       activity: record?.activity ?? '',
       notes: record?.notes ?? '',
     })
-  }, [open, record?.id])
+  }, [open, record?.id, year])
   const shift = shiftQuery.data?.items[0] ?? defaultShiftSettings
   useEffect(() => {
     const savedShift = shiftQuery.data?.items[0]
@@ -2755,7 +2758,7 @@ function DailyWorkDialog({
             }
           />
           <Field label="Work date" required>
-            <Input type="date" {...form.register('work_date')} />
+            <Input type="date" min={`${year}-01-01`} max={`${year}-12-31`} {...form.register('work_date')} />
           </Field>
           <Field label="Attendance">
             <label className="daily-attendance-toggle">
@@ -2858,12 +2861,14 @@ function DailyWorkDialog({
 
 function OvertimeDialog({
   open,
+  year,
   record,
   initialEmployee,
   mutation,
   onClose,
 }: {
   open: boolean
+  year: number
   record: OvertimeRecord | null
   initialEmployee: Employee | null
   mutation: ReturnType<typeof useMutation<MutationReceipt, Error, { id?: string | undefined; values: OvertimeValues }>>
@@ -2874,7 +2879,7 @@ function OvertimeDialog({
     resolver: zodResolver(overtimeSchema),
     defaultValues: {
       employee_id: record?.employee_id ?? initialEmployee?.id ?? '',
-      work_date: record?.work_date ?? localIsoDate(),
+      work_date: record?.work_date ?? dateForFiscalYear(year, localIsoDate()),
       hours: numberValue(record?.hours),
       target_hours: numberValue(record?.target_hours),
       notes: record?.notes ?? '',
@@ -2892,12 +2897,12 @@ function OvertimeDialog({
     setEmployee(initialEmployee)
     form.reset({
       employee_id: record?.employee_id ?? initialEmployee?.id ?? '',
-      work_date: record?.work_date ?? localIsoDate(),
+      work_date: record?.work_date ?? dateForFiscalYear(year, localIsoDate()),
       hours: numberValue(record?.hours),
       target_hours: numberValue(record?.target_hours),
       notes: record?.notes ?? '',
     })
-  }, [record?.id, initialEmployee?.id, open])
+  }, [record?.id, initialEmployee?.id, open, year])
 
   const hours = numberValue(form.watch('hours'))
   const employeeId = form.watch('employee_id')
@@ -2993,7 +2998,7 @@ function OvertimeDialog({
             }
           />
           <Field label="OT date" required>
-            <Input type="date" {...form.register('work_date')} />
+            <Input type="date" min={`${year}-01-01`} max={`${year}-12-31`} {...form.register('work_date')} />
           </Field>
           <Field label="OT hours" required error={form.formState.errors.hours?.message}>
             <Input type="number" min="0.01" max="24" step="0.25" readOnly {...form.register('hours')} />
@@ -3049,11 +3054,13 @@ type PayrollEditorSection = 'work' | 'additions' | 'deductions' | 'contributions
 
 function PayrollDialog({
   open,
+  year,
   record,
   mutation,
   onClose,
 }: {
   open: boolean
+  year: number
   record: Payroll | null
   mutation: ReturnType<
     typeof useMutation<
@@ -3102,8 +3109,8 @@ function PayrollDialog({
   const form = useForm<PayrollValues>({
     resolver: zodResolver(payrollSchema) as Resolver<PayrollValues>,
     defaultValues: {
-      payroll_date: record?.payroll_date ?? localIsoDate(),
-      salary_month: record?.salary_month ?? localIsoMonth(),
+      payroll_date: record?.payroll_date ?? dateForFiscalYear(year, localIsoDate()),
+      salary_month: record?.salary_month ?? monthForFiscalYear(year, localIsoMonth()),
       employee_id: record?.employee_id ?? '',
       status: 'payable',
       payment_method: 'salary_payable',
@@ -3134,8 +3141,8 @@ function PayrollDialog({
     setEditPayTerms(false)
     setEditorSection('work')
     form.reset({
-      payroll_date: record?.payroll_date ?? localIsoDate(),
-      salary_month: record?.salary_month ?? localIsoMonth(),
+      payroll_date: record?.payroll_date ?? dateForFiscalYear(year, localIsoDate()),
+      salary_month: record?.salary_month ?? monthForFiscalYear(year, localIsoMonth()),
       employee_id: record?.employee_id ?? '',
       status: 'payable',
       payment_method: 'salary_payable',
@@ -3152,7 +3159,7 @@ function PayrollDialog({
       overtime_ids: [],
       daily_target_ids: [],
     })
-  }, [open, record?.id])
+  }, [open, record?.id, year])
 
   const employeeId = form.watch('employee_id')
   const salaryMonth = form.watch('salary_month')
@@ -3551,10 +3558,20 @@ function PayrollDialog({
             }
           />
           <Field label="Salary month" required>
-            <Input type="month" {...form.register('salary_month')} />
+            <Input
+              type="month"
+              min={`${year}-01`}
+              max={`${year}-12`}
+              {...form.register('salary_month')}
+            />
           </Field>
           <Field label="Payroll date" required>
-            <Input type="date" {...form.register('payroll_date')} />
+            <Input
+              type="date"
+              min={`${year}-01-01`}
+              max={`${year}-12-31`}
+              {...form.register('payroll_date')}
+            />
           </Field>
           <Field label="Settlement">
             <Controller

@@ -25,6 +25,7 @@ import { useAuth } from '../auth/AuthProvider'
 import { useToast } from '../components/Toast'
 import { Badge, Button, ErrorState, LoadingState } from '../components/UI'
 import { BrandLogo } from '../components/BrandLogo'
+import { currentFiscalYear, fiscalYearOptions } from '../lib/fiscalYear'
 
 const navItems: Array<{ to: string; label: string; icon: typeof Gauge; permissions?: string[] }> = [
   { to: '/dashboard', label: 'Overview', icon: Gauge, permissions: ['dashboard.read'] },
@@ -81,7 +82,7 @@ export function AppShell() {
   const online = useOnline()
   const fetching = useIsFetching()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [year, setYear] = useState(new Date().getFullYear())
+  const [year, setYear] = useState(currentFiscalYear)
   const basePath = portal ? `/${portal.routeCode}` : ''
 
   const meQuery = useQuery({
@@ -171,7 +172,7 @@ export function AppShell() {
           </div>
           <div className="topbar__actions">
             <label className="year-picker"><span>Fiscal year</span><select value={year} onChange={(event) => setYear(Number(event.target.value))}>
-              {Array.from({ length: 7 }, (_, index) => new Date().getFullYear() + 1 - index).map((option) => <option key={option}>{option}</option>)}
+              {fiscalYearOptions(year).map((option) => <option key={option}>{option}</option>)}
             </select></label>
             <Badge tone={online ? 'success' : 'danger'}>{online ? 'Live API' : 'Offline'}</Badge>
             <Button variant="secondary" size="small" icon={RefreshCw} loading={Boolean(fetching)} onClick={() => void queryClient.invalidateQueries()}>Refresh</Button>

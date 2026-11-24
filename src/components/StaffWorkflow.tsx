@@ -20,6 +20,7 @@ import { z } from 'zod/v3'
 import { api } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { downloadEmployeeProfilePdf } from '../lib/employeeProfilePdf'
+import { dateForFiscalYear, monthForFiscalYear } from '../lib/fiscalYear'
 import {
   localIsoDate,
   localIsoMonth,
@@ -160,8 +161,16 @@ async function signedEmployeePhoto(path: string | null | undefined) {
 
 type DailyLogFilter = 'all' | 'present' | 'absent' | 'late' | 'ot'
 
-export function EmployeeDailyLogDialog({ employee, onClose }: { employee: Employee | null; onClose: () => void }) {
-  const [month, setMonth] = useState(localIsoMonth())
+export function EmployeeDailyLogDialog({
+  employee,
+  year,
+  onClose,
+}: {
+  employee: Employee | null
+  year: number
+  onClose: () => void
+}) {
+  const [month, setMonth] = useState(() => monthForFiscalYear(year, localIsoMonth()))
   const [filter, setFilter] = useState<DailyLogFilter>('all')
   const range = rangeForMonth(month)
   const workQuery = useQuery({
@@ -249,18 +258,26 @@ export function EmployeeDailyLogDialog({ employee, onClose }: { employee: Employ
             variant="secondary"
             size="small"
             onClick={() => setMonth(adjacentMonth(month, -1))}
+            disabled={month === `${year}-01`}
             aria-label="Previous month"
           >
             <ChevronLeft size={16} />
           </Button>
           <label>
             <span className="sr-only">Log month</span>
-            <Input type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
+            <Input
+              type="month"
+              min={`${year}-01`}
+              max={`${year}-12`}
+              value={month}
+              onChange={(event) => setMonth(event.target.value)}
+            />
           </label>
           <Button
             variant="secondary"
             size="small"
             onClick={() => setMonth(adjacentMonth(month, 1))}
+            disabled={month === `${year}-12`}
             aria-label="Next month"
           >
             <ChevronRight size={16} />
@@ -626,11 +643,13 @@ export function SalaryAdvancesList({
 
 export function SalaryAdvanceDialog({
   open,
+  year,
   initialEmployee,
   mutation,
   onClose,
 }: {
   open: boolean
+  year: number
   initialEmployee: Employee | null
   mutation: UseMutationResult<MutationReceipt, Error, SalaryAdvanceValues>
   onClose: () => void
@@ -639,7 +658,7 @@ export function SalaryAdvanceDialog({
     resolver: zodResolver(advanceSchema),
     defaultValues: {
       employee_id: '',
-      advance_date: localIsoDate(),
+      advance_date: dateForFiscalYear(year, localIsoDate()),
       amount: 0,
       notes: '',
     },
@@ -648,11 +667,11 @@ export function SalaryAdvanceDialog({
     if (open)
       form.reset({
         employee_id: initialEmployee?.id ?? '',
-        advance_date: localIsoDate(),
+        advance_date: dateForFiscalYear(year, localIsoDate()),
         amount: 0,
         notes: '',
       })
-  }, [open, initialEmployee?.id])
+  }, [open, initialEmployee?.id, year])
   const submit = form.handleSubmit((values) => mutation.mutate(values))
   return (
     <Dialog
@@ -692,7 +711,7 @@ export function SalaryAdvanceDialog({
         />
         <div className="form-grid form-grid--two">
           <Field label="Date advance taken" required>
-            <Input type="date" {...form.register('advance_date')} />
+            <Input type="date" min={`${year}-01-01`} max={`${year}-12-31`} {...form.register('advance_date')} />
           </Field>
           <Field label="Advance amount (LKR)" required error={form.formState.errors.amount?.message}>
             <Input type="number" min="0.01" step="0.01" {...form.register('amount')} />
