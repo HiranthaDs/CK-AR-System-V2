@@ -9,7 +9,7 @@ import { Button, EmptyState, ErrorState, Field, Input, LoadingState, Textarea } 
 import { Dialog } from '../components/Dialog'
 import { makeRequestId, publicApi } from '../lib/api'
 import { money, numberValue } from '../lib/format'
-import { catalogOrderWhatsAppUrl } from '../lib/catalogOrderWhatsApp'
+import { catalogOrderWhatsAppUrl, openCatalogOrderWhatsApp } from '../lib/catalogOrderWhatsApp'
 import type { PublicCatalogItem, PublicOrderReceipt } from '../types/api'
 import { BrandLogo } from '../components/BrandLogo'
 
@@ -68,6 +68,8 @@ export function PublicCatalogPage() {
   const [receipt, setReceipt] = useState<PublicOrderReceipt | null>(null)
   const [whatsappUrl, setWhatsappUrl] = useState<string | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<PublicCatalogItem | null>(null)
+  const [quantityProduct, setQuantityProduct] = useState<PublicCatalogItem | null>(null)
+  const [quantityDraft, setQuantityDraft] = useState('1')
   const [requestKey, setRequestKey] = useState(() => makeRequestId())
   const form = useForm<OrderValues>({
     resolver: zodResolver(orderSchema),
@@ -102,6 +104,17 @@ export function PublicCatalogPage() {
       return next
     })
   }
+  const openQuantityDialog = (product: PublicCatalogItem) => {
+    setQuantityDraft(String(cart[product.id] ?? 1))
+    setQuantityProduct(product)
+  }
+  const saveQuantity = () => {
+    if (!quantityProduct) return
+    const parsed = Number(quantityDraft)
+    if (!Number.isFinite(parsed) || parsed < 1) return
+    updateQuantity(quantityProduct.id, parsed)
+    setQuantityProduct(null)
+  }
 
   const orderMutation = useMutation({
     mutationFn: (values: OrderValues) => publicApi.post<PublicOrderReceipt, Record<string, unknown>>('/public/orders', {
@@ -112,7 +125,7 @@ export function PublicCatalogPage() {
       items: cartLines.map((line) => ({ item_id: line.product.id, quantity: line.quantity })),
     }, requestKey),
     onSuccess: (result, values) => {
-      setWhatsappUrl(catalogOrderWhatsAppUrl({
+      const nextWhatsappUrl = catalogOrderWhatsAppUrl({
         receipt: result,
         customer: {
           name: values.customer_name,
@@ -122,11 +135,13 @@ export function PublicCatalogPage() {
           ...(values.notes ? { notes: values.notes } : {}),
         },
         lines: cartLines,
-      }))
+      })
+      setWhatsappUrl(nextWhatsappUrl)
       setReceipt(result)
       setCart({})
       setRequestKey(makeRequestId())
       form.reset()
+      openCatalogOrderWhatsApp(nextWhatsappUrl)
     },
   })
   const submit = form.handleSubmit((values) => {
@@ -155,7 +170,7 @@ export function PublicCatalogPage() {
             const quantity = cart[product.id] ?? 0
             return <article className="catalog-product-card" key={product.id}>
               <button type="button" className="catalog-product-card__image" onClick={() => setSelectedProduct(product)} aria-label={`View ${product.name} details`}>{product.image_url ? <img src={product.image_url} alt={product.name} loading="lazy" /> : <PackageOpen size={40} aria-hidden="true" />}<span>View details</span></button>
-              <div className="catalog-product-card__body"><span>{product.category}</span><h2>{product.name}</h2><p>{product.description || 'Contact us for product specifications and available options.'}</p><div className="catalog-product-card__footer"><strong>{money(product.selling_price)}</strong>{quantity ? <div className="quantity-stepper"><button type="button" onClick={() => updateQuantity(product.id, quantity - 1)} aria-label={`Remove one ${product.name}`}><Minus size={15} /></button><CatalogQuantityInput product={product} quantity={quantity} onChange={(value) => updateQuantity(product.id, value)} /><button type="button" onClick={() => updateQuantity(product.id, quantity + 1)} aria-label={`Add one ${product.name}`}><Plus size={15} /></button></div> : <Button size="small" icon={Plus} onClick={() => updateQuantity(product.id, 1)}>Add</Button>}</div></div>
+              <div className="catalog-product-card__body"><span>{product.category}</span><h2>{product.name}</h2><p>{product.description || 'Contact us for product specifications and available options.'}</p><div className="catalog-product-card__footer"><strong>{money(product.selling_price)}</strong>{quantity ? <div className="quantity-stepper"><button type="button" onClick={() => updateQuantity(product.id, quantity - 1)} aria-label={`Remove one ${product.name}`}><Minus size={15} /></button><CatalogQuantityInput product={product} quantity={quantity} onChange={(value) => updateQuantity(product.id, value)} /><button type="button" onClick={() => updateQuantity(product.id, quantity + 1)} aria-label={`Add one ${product.name}`}><Plus size={15} /></button></div> : <Button size="small" icon={Plus} onClick={() => openQuantityDialog(product)}>Add</Button>}</div></div>
             </article>
           })}</div> : <EmptyState message="No products match this search." />}
         </div>
@@ -186,12 +201,24 @@ export function PublicCatalogPage() {
       title={selectedProduct?.name ?? 'Product details'}
       description={selectedProduct?.category}
       size="wide"
-      footer={selectedProduct ? <><strong className="catalog-product-detail__price">{money(selectedProduct.selling_price)}</strong><Button icon={Plus} onClick={() => { updateQuantity(selectedProduct.id, (cart[selectedProduct.id] ?? 0) + 1); setSelectedProduct(null) }}>Add to order</Button></> : undefined}
+      footer={selectedProduct ? <><strong className="catalog-product-detail__price">{money(selectedProduct.selling_price)}</strong><Button icon={Plus} onClick={() => { openQuantityDialog(selectedProduct); setSelectedProduct(null) }}>Choose quantity</Button></> : undefined}
     >
       {selectedProduct ? <div className="catalog-product-detail">
         <div className="catalog-product-detail__image">{selectedProduct.image_url ? <img src={selectedProduct.image_url} alt={selectedProduct.name} /> : <PackageOpen size={58} aria-hidden="true" />}</div>
         <div><span className="catalog-kicker">{selectedProduct.category}</span><p>{selectedProduct.description || 'Contact us for product specifications and available options.'}</p>{selectedProduct.sku ? <small>Product code: <strong>{selectedProduct.sku}</strong></small> : null}</div>
       </div> : null}
+    </Dialog>
+    <Dialog
+      open={Boolean(quantityProduct)}
+      onClose={() => setQuantityProduct(null)}
+      title={quantityProduct ? `Add ${quantityProduct.name}` : 'Choose quantity'}
+      description="Enter the exact quantity to add to your order."
+      footer={<><Button variant="secondary" onClick={() => setQuantityProduct(null)}>Cancel</Button><Button icon={Plus} disabled={!quantityDraft || Number(quantityDraft) < 1} onClick={saveQuantity}>Save quantity</Button></>}
+    >
+      <form className="catalog-quantity-dialog" onSubmit={(event) => { event.preventDefault(); saveQuantity() }}>
+        <Field label="Quantity" required hint="Use a whole number from 1 to 10,000."><Input type="number" min="1" max="10000" step="1" inputMode="numeric" autoFocus value={quantityDraft} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setQuantityDraft(event.currentTarget.value)} /></Field>
+        {quantityProduct ? <div className="catalog-quantity-dialog__total"><span>Estimated amount</span><strong>{money(numberValue(quantityProduct.selling_price) * Math.max(0, Math.min(10000, Math.trunc(Number(quantityDraft) || 0))))}</strong></div> : null}
+      </form>
     </Dialog>
     <footer className="catalog-footer"><strong>CK Plastics</strong><span>Product catalogue and customer ordering</span></footer>
   </div>

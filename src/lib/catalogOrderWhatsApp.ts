@@ -43,3 +43,7 @@ export function catalogOrderWhatsAppMessage({ receipt, customer, lines }: Catalo
 export function catalogOrderWhatsAppUrl(input: CatalogWhatsAppOrderInput) {
   return `https://wa.me/${CATALOG_ORDER_WHATSAPP_NUMBER}?text=${encodeURIComponent(catalogOrderWhatsAppMessage(input))}`
 }
+
+export function openCatalogOrderWhatsApp(url: string, location: Pick<Location, 'assign'> = window.location) {
+  location.assign(url)
+}

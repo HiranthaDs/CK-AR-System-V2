@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { CATALOG_ORDER_WHATSAPP_NUMBER, catalogOrderWhatsAppMessage, catalogOrderWhatsAppUrl } from '../lib/catalogOrderWhatsApp'
+import { describe, expect, it, vi } from 'vitest'
+import { CATALOG_ORDER_WHATSAPP_NUMBER, catalogOrderWhatsAppMessage, catalogOrderWhatsAppUrl, openCatalogOrderWhatsApp } from '../lib/catalogOrderWhatsApp'
 
 const input = {
   receipt: {
@@ -39,5 +39,12 @@ describe('catalogue order WhatsApp handoff', () => {
 
   it('targets the configured CK Plastics WhatsApp number', () => {
     expect(catalogOrderWhatsAppUrl(input)).toMatch(new RegExp(`^https://wa.me/${CATALOG_ORDER_WHATSAPP_NUMBER}\\?text=`))
+  })
+
+  it('redirects to WhatsApp only after receiving the saved-order URL', () => {
+    const location = { assign: vi.fn() }
+    const url = catalogOrderWhatsAppUrl(input)
+    openCatalogOrderWhatsApp(url, location)
+    expect(location.assign).toHaveBeenCalledWith(url)
   })
 })

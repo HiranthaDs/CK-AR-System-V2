@@ -33,9 +33,14 @@ describe('public catalogue quantities', () => {
     )
 
     await user.click(await screen.findByRole('button', { name: 'Add' }))
+    const dialog = screen.getByRole('dialog', { name: 'Add Blue crate' })
+    const dialogQuantity = screen.getByRole('spinbutton', { name: /^Quantity/ })
+    await user.clear(dialogQuantity)
+    await user.type(dialogQuantity, '24')
+    await user.click(screen.getByRole('button', { name: 'Save quantity' }))
+
+    expect(dialog).not.toBeInTheDocument()
     const quantityInput = screen.getByRole('spinbutton', { name: 'Blue crate quantity' })
-    await user.clear(quantityInput)
-    await user.type(quantityInput, '24')
 
     expect(quantityInput).toHaveValue(24)
     expect(screen.getByText('24 items')).toBeInTheDocument()

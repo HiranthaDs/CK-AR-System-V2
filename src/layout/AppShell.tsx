@@ -108,8 +108,11 @@ export function AppShell() {
       descending: true,
     }, signal),
     enabled: canReadSales,
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    refetchInterval: () => navigator.onLine && document.visibilityState === 'visible' ? 60_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: 'always',
+    refetchOnReconnect: 'always',
+    staleTime: 30_000,
   })
 
   const logOut = async () => {

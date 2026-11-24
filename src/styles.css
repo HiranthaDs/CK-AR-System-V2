@@ -4194,6 +4194,31 @@ tbody tr:hover {
   color: #173d99;
   font-size: 1.35rem;
 }
+.catalog-quantity-dialog {
+  display: grid;
+  gap: 15px;
+}
+.catalog-quantity-dialog .input {
+  min-height: 54px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  text-align: center;
+}
+.catalog-quantity-dialog__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  color: #52627a;
+  background: #f6f9ff;
+  border: 1px solid #dce5f4;
+  border-radius: 11px;
+}
+.catalog-quantity-dialog__total strong {
+  color: #173d99;
+  font-size: 1.05rem;
+}
 .quantity-stepper {
   display: inline-flex;
   align-items: center;
